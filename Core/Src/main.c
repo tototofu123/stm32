@@ -52,7 +52,6 @@ typedef enum
 #define WIFI_SSID   "ESP_2F0F28"
 #define WIFI_PASS   "thereisnospoon"
 
-
 #define LED_LEFT_PIN    GPIO_PIN_2
 #define LED_LEFT_PORT   GPIOA
 
@@ -64,6 +63,9 @@ typedef enum
 
 #define LED_FRONT_PIN   GPIO_PIN_5
 #define LED_FRONT_PORT  GPIOA
+
+#define LASER_RX_PIN    GPIO_PIN_9
+#define LASER_RX_PORT   GPIOB
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -105,9 +107,11 @@ char prev_y_value[24]    = "";
 char prev_btn_value[24]  = "";
 char prev_last_value[24] = "";
 char prev_laser_value[24]= "";
+char prev_rx_value[24]   = "";
 
 uint8_t laser_active = 0;
 uint32_t laser_end_tick = 0;
+uint8_t laser_rx_latched = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -131,7 +135,7 @@ void ESP_ClearBuffer(void);
 void WiFi_Start(void);
 void WiFi_Task(void);
 
-void LCD_UpdateUI(uint32_t x_raw, uint32_t y_raw, GPIO_PinState k2_now);
+void LCD_UpdateUI(uint32_t x_raw, uint32_t y_raw, GPIO_PinState k2_now, uint8_t laser_rx_latched);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -329,13 +333,14 @@ void WiFi_Task(void)
     }
 }
 
-void LCD_UpdateUI(uint32_t x_raw, uint32_t y_raw, GPIO_PinState k2_now)
+void LCD_UpdateUI(uint32_t x_raw, uint32_t y_raw, GPIO_PinState k2_now, uint8_t laser_rx_latched)
 {
     char x_value[32];
     char y_value[32];
     char btn_value[8];
     char last_value[24];
     char laser_value[24];
+    char rx_value[24];
     uint32_t x_cV = (x_raw * 330U) / 4095U;
     uint32_t y_cV = (y_raw * 330U) / 4095U;
 
@@ -363,6 +368,11 @@ void LCD_UpdateUI(uint32_t x_raw, uint32_t y_raw, GPIO_PinState k2_now)
         snprintf(laser_value, sizeof(laser_value), "%s", laser_line + 7);
     else
         snprintf(laser_value, sizeof(laser_value), "%s", laser_line);
+
+    if (laser_rx_latched)
+        strcpy(rx_value, "SHOT");
+    else
+        strcpy(rx_value, "NONE");
 
     if (strcmp(wifi_line1, prev_wifi_line1) != 0)
     {
@@ -415,7 +425,15 @@ void LCD_UpdateUI(uint32_t x_raw, uint32_t y_raw, GPIO_PinState k2_now)
         LCD_DrawString(75, 195, laser_value);
         strcpy(prev_laser_value, laser_value);
     }
+
+    if (strcmp(rx_value, prev_rx_value) != 0)
+    {
+        LCD_Clear(75, 225, 239, 245, WHITE);
+        LCD_DrawString(75, 225, rx_value);
+        strcpy(prev_rx_value, rx_value);
+    }
 }
+
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
     if (huart->Instance == USART3)
@@ -468,6 +486,7 @@ int main(void)
   LCD_DrawString(10, 165, "Btn:");
   LCD_DrawString(100, 165, "Last:");
   LCD_DrawString(10, 195, "Laser:");
+  LCD_DrawString(10, 225, "Recv:");
 
   prev_wifi_line1[0] = '\0';
   prev_wifi_line2[0] = '\0';
@@ -476,6 +495,7 @@ int main(void)
   prev_btn_value[0] = '\0';
   prev_last_value[0] = '\0';
   prev_laser_value[0] = '\0';
+  prev_rx_value[0] = '\0';
 
   ESP_ClearBuffer();
   ESP_StartReceiveIT();
@@ -490,6 +510,12 @@ int main(void)
       uint32_t x_raw = read_adc1();
       uint32_t y_raw = read_adc2();
       GPIO_PinState k2_now = HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13);
+      GPIO_PinState laser_rx_now = HAL_GPIO_ReadPin(LASER_RX_PORT, LASER_RX_PIN);
+
+      if (laser_rx_now == GPIO_PIN_SET)
+      {
+          laser_rx_latched = 1;
+      }
 
       if ((last_k2_state == GPIO_PIN_SET) && (k2_now == GPIO_PIN_RESET))
       {
@@ -499,8 +525,6 @@ int main(void)
               last_k2_press_tick = HAL_GetTick();
               k2_has_been_pressed = 1;
               laser_start_1s();
-
-              HAL_GPIO_WritePin(FIRE_SIG_PORT, FIRE_SIG_PIN, GPIO_PIN_SET);   // immediate ON
           }
       }
 
@@ -514,7 +538,7 @@ int main(void)
       HAL_GPIO_WritePin(LED_FRONT_PORT, LED_FRONT_PIN, (y_raw < 1000) ? GPIO_PIN_SET : GPIO_PIN_RESET);
 
       WiFi_Task();
-      LCD_UpdateUI(x_raw, y_raw, k2_now);
+      LCD_UpdateUI(x_raw, y_raw, k2_now, laser_rx_latched);
 
       HAL_Delay(10);
     /* USER CODE END WHILE */
@@ -671,6 +695,11 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull  = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+
+  GPIO_InitStruct.Pin  = LASER_RX_PIN;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(LASER_RX_PORT, &GPIO_InitStruct);
 
   HAL_GPIO_WritePin(GPIOA, LED_LEFT_PIN | FIRE_SIG_PIN | LED_RIGHT_PIN | LED_FRONT_PIN, GPIO_PIN_RESET);
 
