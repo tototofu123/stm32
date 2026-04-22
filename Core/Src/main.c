@@ -28,7 +28,20 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+typedef enum
+{
+    WIFI_STATE_IDLE = 0,
+    WIFI_STATE_SEND_AT,
+    WIFI_STATE_WAIT_AT,
+    WIFI_STATE_SEND_CWMODE,
+    WIFI_STATE_WAIT_CWMODE,
+    WIFI_STATE_SEND_CWJAP,
+    WIFI_STATE_WAIT_CWJAP,
+    WIFI_STATE_SEND_CIFSR,
+    WIFI_STATE_WAIT_CIFSR,
+    WIFI_STATE_DONE,
+    WIFI_STATE_FAIL
+} wifi_state_t;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -38,6 +51,19 @@
 
 #define WIFI_SSID   "ESP_2F0F28"
 #define WIFI_PASS   "thereisnospoon"
+
+
+#define LED_LEFT_PIN    GPIO_PIN_2
+#define LED_LEFT_PORT   GPIOA
+
+#define LED_BACK_PIN    GPIO_PIN_3
+#define LED_BACK_PORT   GPIOA
+
+#define LED_RIGHT_PIN   GPIO_PIN_4
+#define LED_RIGHT_PORT  GPIOA
+
+#define LED_FRONT_PIN   GPIO_PIN_5
+#define LED_FRONT_PORT  GPIOA
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -61,6 +87,27 @@ uint8_t  k2_has_been_pressed = 0;
 GPIO_PinState last_k2_state  = GPIO_PIN_SET;
 
 char esp_rx[256];
+uint8_t esp_rx_byte;
+volatile uint16_t esp_rx_index = 0;
+volatile uint8_t esp_rx_done = 0;
+
+wifi_state_t wifi_state = WIFI_STATE_IDLE;
+uint32_t wifi_state_tick = 0;
+char wifi_line1[32] = "WiFi: idle";
+char wifi_line2[32] = "IP: none";
+char laser_line[32] = "Laser: ready";
+char last_ip[32] = "IP: none";
+
+char prev_wifi_line1[32] = "";
+char prev_wifi_line2[32] = "";
+char prev_x_value[24]    = "";
+char prev_y_value[24]    = "";
+char prev_btn_value[24]  = "";
+char prev_last_value[24] = "";
+char prev_laser_value[24]= "";
+
+uint8_t laser_active = 0;
+uint32_t laser_end_tick = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -75,10 +122,16 @@ static void MX_USART3_UART_Init(void);
 /* USER CODE BEGIN PFP */
 uint32_t read_adc1(void);
 uint32_t read_adc2(void);
-void laser_fire_1s(void);
+void laser_start_1s(void);
+void laser_update(void);
+
 void ESP_Send(char *cmd);
-void ESP_ReadResponse(uint32_t timeout);
-void ESP_ConnectWiFi(void);
+void ESP_StartReceiveIT(void);
+void ESP_ClearBuffer(void);
+void WiFi_Start(void);
+void WiFi_Task(void);
+
+void LCD_UpdateUI(uint32_t x_raw, uint32_t y_raw, GPIO_PinState k2_now);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -86,7 +139,7 @@ void ESP_ConnectWiFi(void);
 uint32_t read_adc1(void)
 {
     HAL_ADC_Start(&hadc1);
-    HAL_ADC_PollForConversion(&hadc1, 100);
+    HAL_ADC_PollForConversion(&hadc1, 10);
     uint32_t val = HAL_ADC_GetValue(&hadc1);
     HAL_ADC_Stop(&hadc1);
     return val;
@@ -95,17 +148,28 @@ uint32_t read_adc1(void)
 uint32_t read_adc2(void)
 {
     HAL_ADC_Start(&hadc2);
-    HAL_ADC_PollForConversion(&hadc2, 100);
+    HAL_ADC_PollForConversion(&hadc2, 10);
     uint32_t val = HAL_ADC_GetValue(&hadc2);
     HAL_ADC_Stop(&hadc2);
     return val;
 }
 
-void laser_fire_1s(void)
+void laser_start_1s(void)
 {
     HAL_GPIO_WritePin(LASER_PORT, LASER_PIN, GPIO_PIN_SET);
-    HAL_Delay(1000);
-    HAL_GPIO_WritePin(LASER_PORT, LASER_PIN, GPIO_PIN_RESET);
+    laser_active = 1;
+    laser_end_tick = HAL_GetTick() + 1000U;
+    snprintf(laser_line, sizeof(laser_line), "Laser: firing");
+}
+
+void laser_update(void)
+{
+    if (laser_active && HAL_GetTick() >= laser_end_tick)
+    {
+        HAL_GPIO_WritePin(LASER_PORT, LASER_PIN, GPIO_PIN_RESET);
+        laser_active = 0;
+        snprintf(laser_line, sizeof(laser_line), "Laser: done");
+    }
 }
 
 void ESP_Send(char *cmd)
@@ -113,55 +177,256 @@ void ESP_Send(char *cmd)
     HAL_UART_Transmit(&huart3, (uint8_t *)cmd, strlen(cmd), 1000);
 }
 
-void ESP_ReadResponse(uint32_t timeout)
+void ESP_ClearBuffer(void)
 {
     memset(esp_rx, 0, sizeof(esp_rx));
-    HAL_UART_Receive(&huart3, (uint8_t *)esp_rx, sizeof(esp_rx) - 1, timeout);
+    esp_rx_index = 0;
+    esp_rx_done = 0;
 }
 
-void ESP_ConnectWiFi(void)
+void ESP_StartReceiveIT(void)
+{
+    HAL_UART_Receive_IT(&huart3, &esp_rx_byte, 1);
+}
+
+void WiFi_Start(void)
+{
+    wifi_state = WIFI_STATE_SEND_AT;
+    wifi_state_tick = HAL_GetTick();
+    snprintf(wifi_line1, sizeof(wifi_line1), "WiFi: starting");
+    snprintf(wifi_line2, sizeof(wifi_line2), "IP: waiting");
+}
+
+void WiFi_Task(void)
 {
     char cmd[96];
+    char *p;
 
-    LCD_DrawString(10, 60, "WiFi: testing AT... ");
-    ESP_Send("AT\r\n");
-    ESP_ReadResponse(2000);
-    if (strstr(esp_rx, "OK"))
-        LCD_DrawString(10, 60, "WiFi: AT OK         ");
-    else
-        LCD_DrawString(10, 60, "WiFi: no response   ");
-    HAL_Delay(1000);
-
-    LCD_DrawString(10, 60, "WiFi: set STA mode  ");
-    ESP_Send("AT+CWMODE=1\r\n");
-    ESP_ReadResponse(2000);
-    HAL_Delay(1000);
-
-    LCD_DrawString(10, 60, "WiFi: connecting... ");
-    snprintf(cmd, sizeof(cmd), "AT+CWJAP=\"%s\",\"%s\"\r\n", WIFI_SSID, WIFI_PASS);
-    ESP_Send(cmd);
-    ESP_ReadResponse(15000);
-
-    if (strstr(esp_rx, "WIFI CONNECTED") || strstr(esp_rx, "GOT IP"))
-        LCD_DrawString(10, 60, "WiFi: CONNECTED     ");
-    else
-        LCD_DrawString(10, 60, "WiFi: FAILED        ");
-    HAL_Delay(1000);
-
-    LCD_DrawString(10, 60, "WiFi: getting IP... ");
-    ESP_Send("AT+CIFSR\r\n");
-    ESP_ReadResponse(3000);
-
-    char ip_line[32];
-    char *p = strstr(esp_rx, "STAIP,");
-    if (p)
+    switch (wifi_state)
     {
-        snprintf(ip_line, sizeof(ip_line), "%.24s", p);
-        LCD_DrawString(10, 60, ip_line);
+    case WIFI_STATE_IDLE:
+        break;
+
+    case WIFI_STATE_SEND_AT:
+        ESP_ClearBuffer();
+        ESP_Send("AT\r\n");
+        wifi_state = WIFI_STATE_WAIT_AT;
+        wifi_state_tick = HAL_GetTick();
+        snprintf(wifi_line1, sizeof(wifi_line1), "WiFi: testing AT");
+        break;
+
+    case WIFI_STATE_WAIT_AT:
+        if (strstr(esp_rx, "OK"))
+        {
+            wifi_state = WIFI_STATE_SEND_CWMODE;
+        }
+        else if (HAL_GetTick() - wifi_state_tick > 2000U)
+        {
+            wifi_state = WIFI_STATE_FAIL;
+            snprintf(wifi_line1, sizeof(wifi_line1), "WiFi: AT timeout");
+        }
+        break;
+
+    case WIFI_STATE_SEND_CWMODE:
+        ESP_ClearBuffer();
+        ESP_Send("AT+CWMODE=1\r\n");
+        wifi_state = WIFI_STATE_WAIT_CWMODE;
+        wifi_state_tick = HAL_GetTick();
+        snprintf(wifi_line1, sizeof(wifi_line1), "WiFi: set STA");
+        break;
+
+    case WIFI_STATE_WAIT_CWMODE:
+        if (strstr(esp_rx, "OK") || strstr(esp_rx, "no change"))
+        {
+            wifi_state = WIFI_STATE_SEND_CWJAP;
+        }
+        else if (HAL_GetTick() - wifi_state_tick > 3000U)
+        {
+            wifi_state = WIFI_STATE_FAIL;
+            snprintf(wifi_line1, sizeof(wifi_line1), "WiFi: mode fail");
+        }
+        break;
+
+    case WIFI_STATE_SEND_CWJAP:
+        ESP_ClearBuffer();
+        snprintf(cmd, sizeof(cmd), "AT+CWJAP=\"%s\",\"%s\"\r\n", WIFI_SSID, WIFI_PASS);
+        ESP_Send(cmd);
+        wifi_state = WIFI_STATE_WAIT_CWJAP;
+        wifi_state_tick = HAL_GetTick();
+        snprintf(wifi_line1, sizeof(wifi_line1), "WiFi: connecting");
+        snprintf(wifi_line2, sizeof(wifi_line2), "SSID: %s", WIFI_SSID);
+        break;
+
+    case WIFI_STATE_WAIT_CWJAP:
+        if (strstr(esp_rx, "WIFI CONNECTED") || strstr(esp_rx, "OK") || strstr(esp_rx, "GOT IP"))
+        {
+            wifi_state = WIFI_STATE_SEND_CIFSR;
+        }
+        else if (strstr(esp_rx, "FAIL") || strstr(esp_rx, "ERROR"))
+        {
+            wifi_state = WIFI_STATE_FAIL;
+            snprintf(wifi_line1, sizeof(wifi_line1), "WiFi: join fail");
+        }
+        else if (HAL_GetTick() - wifi_state_tick > 20000U)
+        {
+            wifi_state = WIFI_STATE_FAIL;
+            snprintf(wifi_line1, sizeof(wifi_line1), "WiFi: join timeout");
+        }
+        break;
+
+    case WIFI_STATE_SEND_CIFSR:
+        ESP_ClearBuffer();
+        ESP_Send("AT+CIFSR\r\n");
+        wifi_state = WIFI_STATE_WAIT_CIFSR;
+        wifi_state_tick = HAL_GetTick();
+        snprintf(wifi_line1, sizeof(wifi_line1), "WiFi: connected");
+        snprintf(wifi_line2, sizeof(wifi_line2), "IP: reading");
+        break;
+
+    case WIFI_STATE_WAIT_CIFSR:
+        p = strstr(esp_rx, "STAIP,");
+        if (p != NULL)
+        {
+            char ip_only[24] = {0};
+            int i = 0;
+
+            p = strchr(p, '\"');
+            if (p != NULL)
+            {
+                p++;
+                while (*p && *p != '\"' && i < (int)(sizeof(ip_only) - 1))
+                {
+                    ip_only[i++] = *p++;
+                }
+                ip_only[i] = '\0';
+                snprintf(last_ip, sizeof(last_ip), "IP: %s", ip_only);
+                snprintf(wifi_line1, sizeof(wifi_line1), "WiFi: connected");
+                snprintf(wifi_line2, sizeof(wifi_line2), "%s", last_ip);
+                wifi_state = WIFI_STATE_DONE;
+            }
+        }
+        else if (HAL_GetTick() - wifi_state_tick > 5000U)
+        {
+            snprintf(wifi_line1, sizeof(wifi_line1), "WiFi: connected");
+            snprintf(wifi_line2, sizeof(wifi_line2), "IP: unavailable");
+            wifi_state = WIFI_STATE_DONE;
+        }
+        break;
+
+    case WIFI_STATE_DONE:
+        break;
+
+    case WIFI_STATE_FAIL:
+        if (strlen(wifi_line2) == 0)
+            snprintf(wifi_line2, sizeof(wifi_line2), "IP: none");
+        break;
+
+    default:
+        wifi_state = WIFI_STATE_FAIL;
+        snprintf(wifi_line1, sizeof(wifi_line1), "WiFi: state error");
+        snprintf(wifi_line2, sizeof(wifi_line2), "IP: none");
+        break;
+    }
+}
+
+void LCD_UpdateUI(uint32_t x_raw, uint32_t y_raw, GPIO_PinState k2_now)
+{
+    char x_value[32];
+    char y_value[32];
+    char btn_value[8];
+    char last_value[24];
+    char laser_value[24];
+    uint32_t x_cV = (x_raw * 330U) / 4095U;
+    uint32_t y_cV = (y_raw * 330U) / 4095U;
+
+    snprintf(x_value, sizeof(x_value), "%4lu  %lu.%02luV", x_raw, x_cV / 100U, x_cV % 100U);
+    snprintf(y_value, sizeof(y_value), "%4lu  %lu.%02luV", y_raw, y_cV / 100U, y_cV % 100U);
+
+    if (k2_now == GPIO_PIN_RESET)
+        strcpy(btn_value, "ON ");
+    else
+        strcpy(btn_value, "OFF");
+
+    if (k2_has_been_pressed)
+    {
+        uint32_t elapsed_ms = HAL_GetTick() - last_k2_press_tick;
+        uint32_t sec  = elapsed_ms / 1000U;
+        uint32_t frac = (elapsed_ms % 1000U) / 10U;
+        snprintf(last_value, sizeof(last_value), "%lu.%02lus", sec, frac);
     }
     else
     {
-        LCD_DrawString(10, 60, "WiFi: no IP found   ");
+        strcpy(last_value, "never");
+    }
+
+    if (strncmp(laser_line, "Laser: ", 7) == 0)
+        snprintf(laser_value, sizeof(laser_value), "%s", laser_line + 7);
+    else
+        snprintf(laser_value, sizeof(laser_value), "%s", laser_line);
+
+    if (strcmp(wifi_line1, prev_wifi_line1) != 0)
+    {
+        LCD_Clear(60, 40, 239, 60, WHITE);
+        LCD_DrawString(60, 40, wifi_line1 + 6);
+        strcpy(prev_wifi_line1, wifi_line1);
+    }
+
+    if (strcmp(wifi_line2, prev_wifi_line2) != 0)
+    {
+        LCD_Clear(35, 65, 239, 85, WHITE);
+        if (strncmp(wifi_line2, "IP:", 3) == 0)
+            LCD_DrawString(35, 65, wifi_line2 + 3);
+        else
+            LCD_DrawString(35, 65, wifi_line2);
+        strcpy(prev_wifi_line2, wifi_line2);
+    }
+
+    if (strcmp(x_value, prev_x_value) != 0)
+    {
+        LCD_Clear(35, 105, 239, 125, WHITE);
+        LCD_DrawString(35, 105, x_value);
+        strcpy(prev_x_value, x_value);
+    }
+
+    if (strcmp(y_value, prev_y_value) != 0)
+    {
+        LCD_Clear(35, 135, 239, 155, WHITE);
+        LCD_DrawString(35, 135, y_value);
+        strcpy(prev_y_value, y_value);
+    }
+
+    if (strcmp(btn_value, prev_btn_value) != 0)
+    {
+        LCD_Clear(55, 165, 95, 185, WHITE);
+        LCD_DrawString(55, 165, btn_value);
+        strcpy(prev_btn_value, btn_value);
+    }
+
+    if (strcmp(last_value, prev_last_value) != 0)
+    {
+        LCD_Clear(140, 165, 239, 185, WHITE);
+        LCD_DrawString(140, 165, last_value);
+        strcpy(prev_last_value, last_value);
+    }
+
+    if (strcmp(laser_value, prev_laser_value) != 0)
+    {
+        LCD_Clear(75, 195, 239, 215, WHITE);
+        LCD_DrawString(75, 195, laser_value);
+        strcpy(prev_laser_value, laser_value);
+    }
+}
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if (huart->Instance == USART3)
+    {
+        if (esp_rx_index < sizeof(esp_rx) - 1)
+        {
+            esp_rx[esp_rx_index++] = esp_rx_byte;
+            esp_rx[esp_rx_index] = '\0';
+        }
+        esp_rx_done = 1;
+        HAL_UART_Receive_IT(&huart3, &esp_rx_byte, 1);
     }
 }
 /* USER CODE END 0 */
@@ -177,16 +442,7 @@ int main(void)
   /* USER CODE END 1 */
 
   HAL_Init();
-
-  /* USER CODE BEGIN Init */
-
-  /* USER CODE END Init */
-
   SystemClock_Config();
-
-  /* USER CODE BEGIN SysInit */
-
-  /* USER CODE END SysInit */
 
   MX_GPIO_Init();
   MX_FSMC_Init();
@@ -203,21 +459,42 @@ int main(void)
 
   LCD_INIT();
   LCD_Clear(0, 0, 240, 320, WHITE);
-  LCD_DrawString(80, 20, "Lai Man To");
 
-  ESP_ConnectWiFi();
+  LCD_DrawString(70, 10, "Lai Man To");
+  LCD_DrawString(10, 40, "WiFi:");
+  LCD_DrawString(10, 65, "IP:");
+  LCD_DrawString(10, 105, "X:");
+  LCD_DrawString(10, 135, "Y:");
+  LCD_DrawString(10, 165, "Btn:");
+  LCD_DrawString(100, 165, "Last:");
+  LCD_DrawString(10, 195, "Laser:");
 
-  LCD_DrawString(10, 50, "Joystick + Laser");
+  prev_wifi_line1[0] = '\0';
+  prev_wifi_line2[0] = '\0';
+  prev_x_value[0] = '\0';
+  prev_y_value[0] = '\0';
+  prev_btn_value[0] = '\0';
+  prev_last_value[0] = '\0';
+  prev_laser_value[0] = '\0';
+
+  ESP_ClearBuffer();
+  ESP_StartReceiveIT();
+  WiFi_Start();
+
+  snprintf(laser_line, sizeof(laser_line), "Laser: ready");
   /* USER CODE END 2 */
 
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-      char buf[40];
-
       uint32_t x_raw = read_adc1();
       uint32_t y_raw = read_adc2();
       GPIO_PinState k2_now = HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13);
+
+      HAL_GPIO_WritePin(LED_LEFT_PORT,  LED_LEFT_PIN,  (x_raw < 1000) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+      HAL_GPIO_WritePin(LED_BACK_PORT,  LED_BACK_PIN,  (y_raw > 3000) ? GPIO_PIN_SET : GPIO_PIN_RESET);   // swapped
+      HAL_GPIO_WritePin(LED_RIGHT_PORT, LED_RIGHT_PIN, (x_raw > 3000) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+      HAL_GPIO_WritePin(LED_FRONT_PORT, LED_FRONT_PIN, (y_raw < 1000) ? GPIO_PIN_SET : GPIO_PIN_RESET);   // swapped
 
       if ((last_k2_state == GPIO_PIN_SET) && (k2_now == GPIO_PIN_RESET))
       {
@@ -226,53 +503,17 @@ int main(void)
           {
               last_k2_press_tick = HAL_GetTick();
               k2_has_been_pressed = 1;
-
-              LCD_DrawString(10, 270, "Laser: firing...     ");
-              laser_fire_1s();
-              LCD_DrawString(10, 270, "Laser: done          ");
+              laser_start_1s();
           }
       }
 
       last_k2_state = k2_now;
 
-      uint32_t x_cV = (x_raw * 330U) / 4095U;
-      uint32_t y_cV = (y_raw * 330U) / 4095U;
+      laser_update();
+      WiFi_Task();
+      LCD_UpdateUI(x_raw, y_raw, k2_now);
 
-      LCD_Clear(0, 80, 240, 180, WHITE);
-
-      sprintf(buf, "X raw: %4lu", x_raw);
-      LCD_DrawString(10, 90, buf);
-
-      sprintf(buf, "Y raw: %4lu", y_raw);
-      LCD_DrawString(10, 120, buf);
-
-      sprintf(buf, "X: %lu.%02lu V", x_cV / 100U, x_cV % 100U);
-      LCD_DrawString(10, 150, buf);
-
-      sprintf(buf, "Y: %lu.%02lu V", y_cV / 100U, y_cV % 100U);
-      LCD_DrawString(10, 180, buf);
-
-      if (k2_now == GPIO_PIN_RESET)
-          sprintf(buf, "%-22s", "Button: pushed");
-      else
-          sprintf(buf, "%-22s", "Button: not pushed");
-      LCD_DrawString(10, 210, buf);
-
-      if (k2_has_been_pressed)
-      {
-          uint32_t elapsed_ms = HAL_GetTick() - last_k2_press_tick;
-          uint32_t sec  = elapsed_ms / 1000U;
-          uint32_t frac = (elapsed_ms % 1000U) / 10U;
-          sprintf(buf, "Last: %3lu.%02lu s ago ", sec, frac);
-          LCD_DrawString(10, 240, buf);
-      }
-      else
-      {
-          sprintf(buf, "%-22s", "Last: never");
-          LCD_DrawString(10, 240, buf);
-      }
-
-      HAL_Delay(100);
+      HAL_Delay(80);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -316,13 +557,7 @@ void SystemClock_Config(void)
   */
 static void MX_ADC1_Init(void)
 {
-  /* USER CODE BEGIN ADC1_Init 0 */
-  /* USER CODE END ADC1_Init 0 */
-
   ADC_ChannelConfTypeDef sConfig = {0};
-
-  /* USER CODE BEGIN ADC1_Init 1 */
-  /* USER CODE END ADC1_Init 1 */
 
   hadc1.Instance = ADC1;
   hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
@@ -337,9 +572,6 @@ static void MX_ADC1_Init(void)
   sConfig.Rank = ADC_REGULAR_RANK_1;
   sConfig.SamplingTime = ADC_SAMPLETIME_55CYCLES_5;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK) { Error_Handler(); }
-
-  /* USER CODE BEGIN ADC1_Init 2 */
-  /* USER CODE END ADC1_Init 2 */
 }
 
 /**
@@ -347,13 +579,7 @@ static void MX_ADC1_Init(void)
   */
 static void MX_ADC2_Init(void)
 {
-  /* USER CODE BEGIN ADC2_Init 0 */
-  /* USER CODE END ADC2_Init 0 */
-
   ADC_ChannelConfTypeDef sConfig = {0};
-
-  /* USER CODE BEGIN ADC2_Init 1 */
-  /* USER CODE END ADC2_Init 1 */
 
   hadc2.Instance = ADC2;
   hadc2.Init.ScanConvMode = ADC_SCAN_DISABLE;
@@ -368,9 +594,6 @@ static void MX_ADC2_Init(void)
   sConfig.Rank = ADC_REGULAR_RANK_1;
   sConfig.SamplingTime = ADC_SAMPLETIME_55CYCLES_5;
   if (HAL_ADC_ConfigChannel(&hadc2, &sConfig) != HAL_OK) { Error_Handler(); }
-
-  /* USER CODE BEGIN ADC2_Init 2 */
-  /* USER CODE END ADC2_Init 2 */
 }
 
 /**
@@ -378,12 +601,6 @@ static void MX_ADC2_Init(void)
   */
 static void MX_I2C2_Init(void)
 {
-  /* USER CODE BEGIN I2C2_Init 0 */
-  /* USER CODE END I2C2_Init 0 */
-
-  /* USER CODE BEGIN I2C2_Init 1 */
-  /* USER CODE END I2C2_Init 1 */
-
   hi2c2.Instance = I2C2;
   hi2c2.Init.ClockSpeed = 100000;
   hi2c2.Init.DutyCycle = I2C_DUTYCYCLE_2;
@@ -394,9 +611,6 @@ static void MX_I2C2_Init(void)
   hi2c2.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
   hi2c2.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
   if (HAL_I2C_Init(&hi2c2) != HAL_OK) { Error_Handler(); }
-
-  /* USER CODE BEGIN I2C2_Init 2 */
-  /* USER CODE END I2C2_Init 2 */
 }
 
 /**
@@ -404,12 +618,6 @@ static void MX_I2C2_Init(void)
   */
 static void MX_USART3_UART_Init(void)
 {
-  /* USER CODE BEGIN USART3_Init 0 */
-  /* USER CODE END USART3_Init 0 */
-
-  /* USER CODE BEGIN USART3_Init 1 */
-  /* USER CODE END USART3_Init 1 */
-
   huart3.Instance = USART3;
   huart3.Init.BaudRate = 115200;
   huart3.Init.WordLength = UART_WORDLENGTH_8B;
@@ -419,9 +627,6 @@ static void MX_USART3_UART_Init(void)
   huart3.Init.HwFlowCtl = UART_HWCONTROL_NONE;
   huart3.Init.OverSampling = UART_OVERSAMPLING_16;
   if (HAL_UART_Init(&huart3) != HAL_OK) { Error_Handler(); }
-
-  /* USER CODE BEGIN USART3_Init 2 */
-  /* USER CODE END USART3_Init 2 */
 }
 
 /**
@@ -441,95 +646,83 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOE, GPIO_PIN_1, GPIO_PIN_SET);
   HAL_GPIO_WritePin(LASER_PORT, LASER_PIN, GPIO_PIN_RESET);
 
-  /* PC13: K2 button */
   GPIO_InitStruct.Pin  = GPIO_PIN_13;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /* PC4: laser output */
   GPIO_InitStruct.Pin   = LASER_PIN;
   GPIO_InitStruct.Mode  = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull  = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(LASER_PORT, &GPIO_InitStruct);
 
-  /* PD12: output */
+  GPIO_InitStruct.Pin   = GPIO_PIN_1;
+  GPIO_InitStruct.Mode  = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull  = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
+
   GPIO_InitStruct.Pin   = GPIO_PIN_12;
   GPIO_InitStruct.Mode  = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull  = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
 
-  /* PE1: output */
-  GPIO_InitStruct.Pin   = GPIO_PIN_1;
+  HAL_GPIO_WritePin(GPIOA, LED_LEFT_PIN | LED_BACK_PIN | LED_RIGHT_PIN | LED_FRONT_PIN, GPIO_PIN_RESET);
+
+  GPIO_InitStruct.Pin   = LED_LEFT_PIN | LED_BACK_PIN | LED_RIGHT_PIN | LED_FRONT_PIN;
   GPIO_InitStruct.Mode  = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull  = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 }
+
 /* FSMC initialization function */
 static void MX_FSMC_Init(void)
 {
-  /* USER CODE BEGIN FSMC_Init 0 */
-  /* USER CODE END FSMC_Init 0 */
-
   FSMC_NORSRAM_TimingTypeDef Timing = {0};
-
-  /* USER CODE BEGIN FSMC_Init 1 */
-  /* USER CODE END FSMC_Init 1 */
 
   hsram1.Instance    = FSMC_NORSRAM_DEVICE;
   hsram1.Extended    = FSMC_NORSRAM_EXTENDED_DEVICE;
   hsram1.Init.NSBank = FSMC_NORSRAM_BANK1;
-  hsram1.Init.DataAddressMux        = FSMC_DATA_ADDRESS_MUX_DISABLE;
-  hsram1.Init.MemoryType            = FSMC_MEMORY_TYPE_SRAM;
-  hsram1.Init.MemoryDataWidth       = FSMC_NORSRAM_MEM_BUS_WIDTH_16;
-  hsram1.Init.BurstAccessMode       = FSMC_BURST_ACCESS_MODE_DISABLE;
-  hsram1.Init.WaitSignalPolarity    = FSMC_WAIT_SIGNAL_POLARITY_LOW;
-  hsram1.Init.WrapMode              = FSMC_WRAP_MODE_DISABLE;
-  hsram1.Init.WaitSignalActive      = FSMC_WAIT_TIMING_BEFORE_WS;
-  hsram1.Init.WriteOperation        = FSMC_WRITE_OPERATION_ENABLE;
-  hsram1.Init.WaitSignal            = FSMC_WAIT_SIGNAL_DISABLE;
-  hsram1.Init.ExtendedMode          = FSMC_EXTENDED_MODE_DISABLE;
-  hsram1.Init.AsynchronousWait      = FSMC_ASYNCHRONOUS_WAIT_DISABLE;
-  hsram1.Init.WriteBurst            = FSMC_WRITE_BURST_DISABLE;
+  hsram1.Init.DataAddressMux = FSMC_DATA_ADDRESS_MUX_DISABLE;
+  hsram1.Init.MemoryType = FSMC_MEMORY_TYPE_SRAM;
+  hsram1.Init.MemoryDataWidth = FSMC_NORSRAM_MEM_BUS_WIDTH_16;
+  hsram1.Init.BurstAccessMode = FSMC_BURST_ACCESS_MODE_DISABLE;
+  hsram1.Init.WaitSignalPolarity = FSMC_WAIT_SIGNAL_POLARITY_LOW;
+  hsram1.Init.WrapMode = FSMC_WRAP_MODE_DISABLE;
+  hsram1.Init.WaitSignalActive = FSMC_WAIT_TIMING_BEFORE_WS;
+  hsram1.Init.WriteOperation = FSMC_WRITE_OPERATION_ENABLE;
+  hsram1.Init.WaitSignal = FSMC_WAIT_SIGNAL_DISABLE;
+  hsram1.Init.ExtendedMode = FSMC_EXTENDED_MODE_DISABLE;
+  hsram1.Init.AsynchronousWait = FSMC_ASYNCHRONOUS_WAIT_DISABLE;
+  hsram1.Init.WriteBurst = FSMC_WRITE_BURST_DISABLE;
 
-  Timing.AddressSetupTime      = 15;
-  Timing.AddressHoldTime       = 15;
-  Timing.DataSetupTime         = 255;
+  Timing.AddressSetupTime = 15;
+  Timing.AddressHoldTime = 15;
+  Timing.DataSetupTime = 255;
   Timing.BusTurnAroundDuration = 15;
-  Timing.CLKDivision           = 16;
-  Timing.DataLatency           = 17;
-  Timing.AccessMode            = FSMC_ACCESS_MODE_A;
+  Timing.CLKDivision = 16;
+  Timing.DataLatency = 17;
+  Timing.AccessMode = FSMC_ACCESS_MODE_A;
 
   if (HAL_SRAM_Init(&hsram1, &Timing, NULL) != HAL_OK) { Error_Handler(); }
 
   __HAL_AFIO_FSMCNADV_DISCONNECTED();
-
-  /* USER CODE BEGIN FSMC_Init 2 */
-  /* USER CODE END FSMC_Init 2 */
 }
-
-/* USER CODE BEGIN 4 */
-
-/* USER CODE END 4 */
 
 /**
   * @brief  This function is executed in case of error occurrence.
   */
 void Error_Handler(void)
 {
-  /* USER CODE BEGIN Error_Handler_Debug */
   __disable_irq();
   while (1) {}
-  /* USER CODE END Error_Handler_Debug */
 }
 
 #ifdef USE_FULL_ASSERT
 void assert_failed(uint8_t *file, uint32_t line)
 {
-  /* USER CODE BEGIN 6 */
-  /* USER CODE END 6 */
 }
 #endif
