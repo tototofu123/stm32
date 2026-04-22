@@ -56,8 +56,8 @@ typedef enum
 #define LED_LEFT_PIN    GPIO_PIN_2
 #define LED_LEFT_PORT   GPIOA
 
-#define LED_BACK_PIN    GPIO_PIN_3
-#define LED_BACK_PORT   GPIOA
+#define FIRE_SIG_PIN    GPIO_PIN_3
+#define FIRE_SIG_PORT   GPIOA
 
 #define LED_RIGHT_PIN   GPIO_PIN_4
 #define LED_RIGHT_PORT  GPIOA
@@ -491,11 +491,6 @@ int main(void)
       uint32_t y_raw = read_adc2();
       GPIO_PinState k2_now = HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13);
 
-      HAL_GPIO_WritePin(LED_LEFT_PORT,  LED_LEFT_PIN,  (x_raw < 1000) ? GPIO_PIN_SET : GPIO_PIN_RESET);
-      HAL_GPIO_WritePin(LED_BACK_PORT,  LED_BACK_PIN,  (y_raw > 3000) ? GPIO_PIN_SET : GPIO_PIN_RESET);   // swapped
-      HAL_GPIO_WritePin(LED_RIGHT_PORT, LED_RIGHT_PIN, (x_raw > 3000) ? GPIO_PIN_SET : GPIO_PIN_RESET);
-      HAL_GPIO_WritePin(LED_FRONT_PORT, LED_FRONT_PIN, (y_raw < 1000) ? GPIO_PIN_SET : GPIO_PIN_RESET);   // swapped
-
       if ((last_k2_state == GPIO_PIN_SET) && (k2_now == GPIO_PIN_RESET))
       {
           HAL_Delay(20);
@@ -504,16 +499,24 @@ int main(void)
               last_k2_press_tick = HAL_GetTick();
               k2_has_been_pressed = 1;
               laser_start_1s();
+
+              HAL_GPIO_WritePin(FIRE_SIG_PORT, FIRE_SIG_PIN, GPIO_PIN_SET);   // immediate ON
           }
       }
 
       last_k2_state = k2_now;
 
       laser_update();
+
+      HAL_GPIO_WritePin(LED_LEFT_PORT,  LED_LEFT_PIN,  (x_raw < 1000) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+      HAL_GPIO_WritePin(FIRE_SIG_PORT,  FIRE_SIG_PIN,  (laser_active) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+      HAL_GPIO_WritePin(LED_RIGHT_PORT, LED_RIGHT_PIN, (x_raw > 3000) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+      HAL_GPIO_WritePin(LED_FRONT_PORT, LED_FRONT_PIN, (y_raw < 1000) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+
       WiFi_Task();
       LCD_UpdateUI(x_raw, y_raw, k2_now);
 
-      HAL_Delay(80);
+      HAL_Delay(10);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -669,9 +672,9 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
 
-  HAL_GPIO_WritePin(GPIOA, LED_LEFT_PIN | LED_BACK_PIN | LED_RIGHT_PIN | LED_FRONT_PIN, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, LED_LEFT_PIN | FIRE_SIG_PIN | LED_RIGHT_PIN | LED_FRONT_PIN, GPIO_PIN_RESET);
 
-  GPIO_InitStruct.Pin   = LED_LEFT_PIN | LED_BACK_PIN | LED_RIGHT_PIN | LED_FRONT_PIN;
+  GPIO_InitStruct.Pin   = LED_LEFT_PIN | FIRE_SIG_PIN | LED_RIGHT_PIN | LED_FRONT_PIN;
   GPIO_InitStruct.Mode  = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull  = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
