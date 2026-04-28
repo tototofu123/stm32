@@ -1,10 +1,8 @@
-/* USER CODE BEGIN Header */
+﻿/* USER CODE BEGIN Header */
 /**
   ******************************************************************************
   * @file           : main.c
-  * @brief          : Joystick + laser + RGB LED + LCD + UART motor commands
-  *                   Motor control via ESP-01S over USART3
-  *                   Commands: F=forward, L=left, R=right, S=stop
+  * @brief          : Joystick + laser + RGB LED + LCD + motor control
   ******************************************************************************
   */
 /* USER CODE END Header */
@@ -33,11 +31,17 @@ typedef enum {
 } wifi_state_t;
 
 typedef enum {
-    LASER_IDLE = 0,
-    LASER_ARMED,
-    LASER_PRIMING,
-    LASER_FIRING,
-    LASER_COOLDOWN
+    K1_SEQ_IDLE = 0,
+    K1_SEQ_FWD,
+    K1_SEQ_STOP
+} k1_seq_t;
+
+typedef enum {
+    LASER_IDLE = 0,   /* White  ??ready, waiting for press         */
+    LASER_ARMED,      /* Blue   ??SW held, laser OFF (not fired)   */
+    LASER_PRIMING,    /* Green  ??SW released, 1 s delay           */
+    LASER_FIRING,     /* Green  ??laser ON for 1 s                 */
+    LASER_COOLDOWN    /* Red    ??3 s cooldown                     */
 } laser_state_t;
 /* USER CODE END PTD */
 
@@ -47,9 +51,9 @@ typedef enum {
 
 #define LASER_PIN           GPIO_PIN_4
 #define LASER_PORT          GPIOC
-#define LASER_PRIME_MS      1000U
-#define LASER_FIRE_MS       1000U
-#define LASER_COOLDOWN_MS   3000U
+#define LASER_PRIME_MS      1000U   /* green delay before firing */
+#define LASER_FIRE_MS       1000U   /* laser ON duration         */
+#define LASER_COOLDOWN_MS   3000U   /* red cooldown              */
 
 #define K1_PIN              GPIO_PIN_13
 #define K1_PORT             GPIOC
@@ -57,6 +61,7 @@ typedef enum {
 #define JOY_SW_PIN          GPIO_PIN_2
 #define JOY_SW_PORT         GPIOC
 
+/* On-board RGB ??common-anode: RESET = ON, SET = OFF */
 #define RGB_R_PIN           GPIO_PIN_5
 #define RGB_R_PORT          GPIOB
 #define RGB_G_PIN           GPIO_PIN_0
@@ -67,10 +72,19 @@ typedef enum {
 #define DS18B20_PIN         GPIO_PIN_8
 #define DS18B20_PORT        GPIOC
 
+#define MOT_L_IN1_PIN       GPIO_PIN_6
+#define MOT_L_IN1_PORT      GPIOB
+#define MOT_L_IN2_PIN       GPIO_PIN_7
+#define MOT_L_IN2_PORT      GPIOB
+#define MOT_R_IN3_PIN       GPIO_PIN_8
+#define MOT_R_IN3_PORT      GPIOB
+#define MOT_R_IN4_PIN       GPIO_PIN_9
+#define MOT_R_IN4_PORT      GPIOB
+
 #define JOY_CENTER          2048U
 #define JOY_DEAD            600U
 #define JOY_FWD_THRESH      1200U
-#define MOTOR_CMD_INTERVAL  100U
+#define JOY_BACK_THRESH     (JOY_CENTER + JOY_DEAD)
 /* USER CODE END PD */
 
 ADC_HandleTypeDef  hadc1;
@@ -89,17 +103,14 @@ laser_state_t laser_state = LASER_IDLE;
 uint32_t      laser_tick  = 0;
 char          laser_line[32] = "Laser:ready";
 
+k1_seq_t k1_seq_state = K1_SEQ_IDLE;
+uint32_t k1_seq_tick  = 0;
 char     motor_label[16] = "STOP";
-char     last_motor_cmd  = 'S';
-uint32_t motor_cmd_tick  = 0;
 
 char    esp_rx[256];
 uint8_t esp_rx_byte;
 volatile uint16_t esp_rx_index = 0;
 volatile uint8_t  esp_rx_done  = 0;
-
-char esp_cmd_rx[8]   = "none";
-char prev_esp_cmd[8] = "";
 
 wifi_state_t wifi_state      = WIFI_STATE_IDLE;
 uint32_t     wifi_state_tick = 0;
@@ -131,7 +142,6 @@ static void MX_USART3_UART_Init(void);
 static uint32_t read_adc1(void);
 static uint32_t read_adc2(void);
 static void     RGB_Set(uint8_t r, uint8_t g, uint8_t b);
-static void     Motor_SendCmd(char cmd);
 static void     laser_on_press(void);
 static void     laser_on_release(void);
 static void     laser_update(void);
@@ -142,6 +152,7 @@ static void     ESP_StartReceiveIT(void);
 static void     WiFi_Start(void);
 static void     WiFi_Task(void);
 static void     Drive_Task(uint32_t x_raw, uint32_t y_raw);
+static void     K1_Seq_Task(void);
 static void     LCD_UpdateUI(uint32_t x_raw, uint32_t y_raw,
                              GPIO_PinState jsw_now, int32_t temp_raw);
 static void     ds_pin_out(void);
@@ -153,6 +164,24 @@ static uint8_t  ds_read_byte(void);
 static int32_t  DS18B20_ReadRaw(void);
 
 /* USER CODE BEGIN 0 */
+
+#define MOTOR_L_FWD() do { \
+    HAL_GPIO_WritePin(MOT_L_IN1_PORT, MOT_L_IN1_PIN, GPIO_PIN_SET);   \
+    HAL_GPIO_WritePin(MOT_L_IN2_PORT, MOT_L_IN2_PIN, GPIO_PIN_RESET); \
+} while(0)
+#define MOTOR_L_OFF() do { \
+    HAL_GPIO_WritePin(MOT_L_IN1_PORT, MOT_L_IN1_PIN, GPIO_PIN_RESET); \
+    HAL_GPIO_WritePin(MOT_L_IN2_PORT, MOT_L_IN2_PIN, GPIO_PIN_RESET); \
+} while(0)
+#define MOTOR_R_FWD() do { \
+    HAL_GPIO_WritePin(MOT_R_IN3_PORT, MOT_R_IN3_PIN, GPIO_PIN_SET);   \
+    HAL_GPIO_WritePin(MOT_R_IN4_PORT, MOT_R_IN4_PIN, GPIO_PIN_RESET); \
+} while(0)
+#define MOTOR_R_OFF() do { \
+    HAL_GPIO_WritePin(MOT_R_IN3_PORT, MOT_R_IN3_PIN, GPIO_PIN_RESET); \
+    HAL_GPIO_WritePin(MOT_R_IN4_PORT, MOT_R_IN4_PIN, GPIO_PIN_RESET); \
+} while(0)
+
 static uint32_t read_adc1(void)
 {
     HAL_ADC_Start(&hadc1);
@@ -171,6 +200,7 @@ static uint32_t read_adc2(void)
     return v;
 }
 
+/* common-anode: 1 = ON (pull LOW), 0 = OFF (pull HIGH) */
 static void RGB_Set(uint8_t r, uint8_t g, uint8_t b)
 {
     HAL_GPIO_WritePin(RGB_R_PORT, RGB_R_PIN, r ? GPIO_PIN_RESET : GPIO_PIN_SET);
@@ -178,25 +208,17 @@ static void RGB_Set(uint8_t r, uint8_t g, uint8_t b)
     HAL_GPIO_WritePin(RGB_B_PORT, RGB_B_PIN, b ? GPIO_PIN_RESET : GPIO_PIN_SET);
 }
 
-static void Motor_SendCmd(char cmd)
-{
-    uint32_t now = HAL_GetTick();
-    if (cmd == last_motor_cmd && (now - motor_cmd_tick) < MOTOR_CMD_INTERVAL)
-        return;
-
-    uint8_t buf[2] = { (uint8_t)cmd, '\n' };
-    HAL_UART_Transmit(&huart3, buf, 2, 10);
-    last_motor_cmd = cmd;
-    motor_cmd_tick = now;
-
-    /* Update ESP display immediately on send */
-    esp_cmd_rx[0] = cmd;
-    esp_cmd_rx[1] = '\0';
-}
+/* ?? Laser state machine ??????????????????????????????????????????
+   IDLE     (white)  waiting
+   ARMED    (blue)   SW held ??laser still OFF
+   PRIMING  (green)  SW released ??1 s countdown before laser fires
+   FIRING   (green)  laser ON for 1 s
+   COOLDOWN (red)    3 s cooldown
+   ???????????????????????????????????????????????????????????????? */
 
 static void laser_on_press(void)
 {
-    if (laser_state != LASER_IDLE) return;
+    if (laser_state != LASER_IDLE) return;  /* blocked when not idle */
     laser_state = LASER_ARMED;
     strcpy(laser_line, "ARMED");
 }
@@ -205,7 +227,7 @@ static void laser_on_release(void)
 {
     if (laser_state != LASER_ARMED) return;
     laser_state = LASER_PRIMING;
-    laser_tick  = HAL_GetTick();
+    laser_tick  = HAL_GetTick();            /* start 1 s green timer */
     strcpy(laser_line, "PRIMING");
 }
 
@@ -221,10 +243,12 @@ static void laser_update(void)
         break;
 
     case LASER_ARMED:
+        /* waiting for SW release ??nothing to time out */
         strcpy(laser_line, "ARMED");
         break;
 
     case LASER_PRIMING:
+        /* green 1 s delay */
         if (elapsed >= LASER_PRIME_MS)
         {
             HAL_GPIO_WritePin(LASER_PORT, LASER_PIN, GPIO_PIN_SET);
@@ -240,6 +264,7 @@ static void laser_update(void)
         break;
 
     case LASER_FIRING:
+        /* laser ON for 1 s */
         if (elapsed >= LASER_FIRE_MS)
         {
             HAL_GPIO_WritePin(LASER_PORT, LASER_PIN, GPIO_PIN_RESET);
@@ -278,183 +303,26 @@ static void RGB_Update_From_State(void)
 {
     switch (laser_state)
     {
-    case LASER_ARMED:    RGB_Set(0,0,1); break;
-    case LASER_PRIMING:  RGB_Set(0,1,0); break;
-    case LASER_FIRING:   RGB_Set(0,1,0); break;
-    case LASER_COOLDOWN: RGB_Set(1,0,0); break;
+    case LASER_ARMED:
+        RGB_Set(0, 0, 1);   /* Blue   ??SW held, ready to fire */
+        break;
+    case LASER_PRIMING:
+        RGB_Set(0, 1, 0);   /* Green  ??1 s countdown          */
+        break;
+    case LASER_FIRING:
+        RGB_Set(0, 1, 0);   /* Green  ??laser firing           */
+        break;
+    case LASER_COOLDOWN:
+        RGB_Set(1, 0, 0);   /* Red    ??cooldown               */
+        break;
     case LASER_IDLE:
-    default:             RGB_Set(1,1,1); break;
-    }
-}
-
-static void Drive_Task(uint32_t x_raw, uint32_t y_raw)
-{
-    char cmd;
-
-    if (y_raw < JOY_FWD_THRESH)
-    {
-        cmd = 'F';
-        strcpy(motor_label, "FWD");
-    }
-    else if (x_raw < (JOY_CENTER - JOY_DEAD))
-    {
-        cmd = 'L';
-        strcpy(motor_label, "LEFT");
-    }
-    else if (x_raw > (JOY_CENTER + JOY_DEAD))
-    {
-        cmd = 'R';
-        strcpy(motor_label, "RIGHT");
-    }
-    else
-    {
-        cmd = 'S';
-        strcpy(motor_label, "STOP");
-    }
-
-    Motor_SendCmd(cmd);
-}
-
-static void ESP_Send(const char *cmd)
-{
-    HAL_UART_Transmit(&huart3, (uint8_t *)cmd, strlen(cmd), 1000);
-}
-
-static void ESP_ClearBuffer(void)
-{
-    memset(esp_rx, 0, sizeof(esp_rx));
-    esp_rx_index = 0;
-    esp_rx_done  = 0;
-}
-
-static void ESP_StartReceiveIT(void)
-{
-    HAL_UART_Receive_IT(&huart3, &esp_rx_byte, 1);
-}
-
-static void WiFi_Start(void)
-{
-    wifi_state      = WIFI_STATE_SEND_AT;
-    wifi_state_tick = HAL_GetTick();
-    snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:starting");
-    snprintf(wifi_line2, sizeof(wifi_line2), "IP:waiting");
-}
-
-static void WiFi_Task(void)
-{
-    char  cmd[96];
-    char *p;
-
-    if (wifi_state == WIFI_STATE_DONE || wifi_state == WIFI_STATE_FAIL)
-        return;
-
-    switch (wifi_state)
-    {
-    case WIFI_STATE_IDLE:
-        break;
-
-    case WIFI_STATE_SEND_AT:
-        ESP_ClearBuffer();
-        ESP_Send("AT\r\n");
-        wifi_state      = WIFI_STATE_WAIT_AT;
-        wifi_state_tick = HAL_GetTick();
-        snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:testing");
-        break;
-
-    case WIFI_STATE_WAIT_AT:
-        if (strstr(esp_rx, "OK"))
-            wifi_state = WIFI_STATE_SEND_CWMODE;
-        else if (HAL_GetTick() - wifi_state_tick > 2000U)
-        {
-            wifi_state = WIFI_STATE_FAIL;
-            snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:timeout");
-        }
-        break;
-
-    case WIFI_STATE_SEND_CWMODE:
-        ESP_ClearBuffer();
-        ESP_Send("AT+CWMODE=1\r\n");
-        wifi_state      = WIFI_STATE_WAIT_CWMODE;
-        wifi_state_tick = HAL_GetTick();
-        snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:STA");
-        break;
-
-    case WIFI_STATE_WAIT_CWMODE:
-        if (strstr(esp_rx, "OK") || strstr(esp_rx, "no change"))
-            wifi_state = WIFI_STATE_SEND_CWJAP;
-        else if (HAL_GetTick() - wifi_state_tick > 3000U)
-        {
-            wifi_state = WIFI_STATE_FAIL;
-            snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:mode fail");
-        }
-        break;
-
-    case WIFI_STATE_SEND_CWJAP:
-        ESP_ClearBuffer();
-        snprintf(cmd, sizeof(cmd), "AT+CWJAP=\"%s\",\"%s\"\r\n", WIFI_SSID, WIFI_PASS);
-        ESP_Send(cmd);
-        wifi_state      = WIFI_STATE_WAIT_CWJAP;
-        wifi_state_tick = HAL_GetTick();
-        snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:connect");
-        snprintf(wifi_line2, sizeof(wifi_line2), "SSID:%s", WIFI_SSID);
-        break;
-
-    case WIFI_STATE_WAIT_CWJAP:
-        if (strstr(esp_rx, "WIFI CONNECTED") || strstr(esp_rx, "GOT IP") || strstr(esp_rx, "OK"))
-            wifi_state = WIFI_STATE_SEND_CIFSR;
-        else if (strstr(esp_rx, "FAIL") || strstr(esp_rx, "ERROR"))
-        {
-            wifi_state = WIFI_STATE_FAIL;
-            snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:join fail");
-        }
-        else if (HAL_GetTick() - wifi_state_tick > 20000U)
-        {
-            wifi_state = WIFI_STATE_FAIL;
-            snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:join tout");
-        }
-        break;
-
-    case WIFI_STATE_SEND_CIFSR:
-        ESP_ClearBuffer();
-        ESP_Send("AT+CIFSR\r\n");
-        wifi_state      = WIFI_STATE_WAIT_CIFSR;
-        wifi_state_tick = HAL_GetTick();
-        snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:linked");
-        snprintf(wifi_line2, sizeof(wifi_line2), "IP:reading");
-        break;
-
-    case WIFI_STATE_WAIT_CIFSR:
-        p = strstr(esp_rx, "STAIP,");
-        if (p != NULL)
-        {
-            char ip_buf[24] = {0};
-            int  i = 0;
-            p = strchr(p, '"');
-            if (p != NULL)
-            {
-                p++;
-                while (*p && *p != '"' && i < (int)(sizeof(ip_buf)-1))
-                    ip_buf[i++] = *p++;
-                ip_buf[i] = '\0';
-                snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:OK");
-                snprintf(wifi_line2, sizeof(wifi_line2), "IP:%s", ip_buf);
-                wifi_state = WIFI_STATE_DONE;
-            }
-        }
-        else if (HAL_GetTick() - wifi_state_tick > 5000U)
-        {
-            snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:OK");
-            snprintf(wifi_line2, sizeof(wifi_line2), "IP:n/a");
-            wifi_state = WIFI_STATE_DONE;
-        }
-        break;
-
     default:
-        wifi_state = WIFI_STATE_FAIL;
+        RGB_Set(1, 1, 1);   /* White  ??ready                  */
         break;
     }
 }
 
+/* ?? DS18B20 ?? */
 static void ds_delay_us(uint16_t us)
 {
     uint32_t n = (uint32_t)us * 18U;
@@ -535,25 +403,162 @@ static int32_t DS18B20_ReadRaw(void)
     HAL_Delay(750);
     if (!ds_start()) return -2032;
     ds_write(0xCCU); ds_write(0xBEU);
-    lo = ds_read_byte();
-    hi = ds_read_byte();
+    lo  = ds_read_byte();
+    hi  = ds_read_byte();
     raw = (int16_t)(((uint16_t)hi << 8) | lo);
     if (raw == 0x0550) return -2032;
     return (int32_t)raw;
 }
 
-/* ── LCD UpdateUI — all clear regions fixed to avoid leftover pixels ── */
+/* ?? K1 motor test sequence ?? */
+static void K1_Seq_Task(void)
+{
+    uint32_t now = HAL_GetTick();
+    switch (k1_seq_state)
+    {
+    case K1_SEQ_IDLE: break;
+    case K1_SEQ_FWD:
+        MOTOR_L_FWD(); MOTOR_R_FWD();
+        strcpy(motor_label, "K1:FWD");
+        if (now - k1_seq_tick >= 2000U)
+        { k1_seq_state = K1_SEQ_STOP; k1_seq_tick = now; }
+        break;
+    case K1_SEQ_STOP:
+        MOTOR_L_OFF(); MOTOR_R_OFF();
+        strcpy(motor_label, "K1:STOP");
+        if (now - k1_seq_tick >= 1000U)
+            k1_seq_state = K1_SEQ_IDLE;
+        break;
+    default: k1_seq_state = K1_SEQ_IDLE; break;
+    }
+}
+
+/* ?? Joystick drive ?? */
+static void Drive_Task(uint32_t x_raw, uint32_t y_raw)
+{
+    if (k1_seq_state != K1_SEQ_IDLE) return;
+    if (y_raw < JOY_FWD_THRESH)
+    { MOTOR_L_FWD(); MOTOR_R_FWD(); strcpy(motor_label, "FWD"); }
+    else if (x_raw < (JOY_CENTER - JOY_DEAD))
+    { MOTOR_L_OFF(); MOTOR_R_FWD(); strcpy(motor_label, "LEFT"); }
+    else if (x_raw > (JOY_CENTER + JOY_DEAD))
+    { MOTOR_L_FWD(); MOTOR_R_OFF(); strcpy(motor_label, "RIGHT"); }
+    else
+    { MOTOR_L_OFF(); MOTOR_R_OFF(); strcpy(motor_label, "STOP"); }
+}
+
+/* ?? WiFi ?? */
+static void ESP_Send(const char *cmd)
+{ HAL_UART_Transmit(&huart3, (uint8_t *)cmd, strlen(cmd), 1000); }
+
+static void ESP_ClearBuffer(void)
+{ memset(esp_rx, 0, sizeof(esp_rx)); esp_rx_index = 0; esp_rx_done = 0; }
+
+static void ESP_StartReceiveIT(void)
+{ HAL_UART_Receive_IT(&huart3, &esp_rx_byte, 1); }
+
+static void WiFi_Start(void)
+{
+    wifi_state = WIFI_STATE_SEND_AT;
+    wifi_state_tick = HAL_GetTick();
+    snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:starting");
+    snprintf(wifi_line2, sizeof(wifi_line2), "IP:waiting");
+}
+
+static void WiFi_Task(void)
+{
+    char  cmd[96];
+    char *p;
+    switch (wifi_state)
+    {
+    case WIFI_STATE_IDLE: break;
+    case WIFI_STATE_SEND_AT:
+        ESP_ClearBuffer(); ESP_Send("AT\r\n");
+        wifi_state = WIFI_STATE_WAIT_AT;
+        wifi_state_tick = HAL_GetTick();
+        snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:testing");
+        break;
+    case WIFI_STATE_WAIT_AT:
+        if (strstr(esp_rx, "OK")) wifi_state = WIFI_STATE_SEND_CWMODE;
+        else if (HAL_GetTick() - wifi_state_tick > 2000U)
+        { wifi_state = WIFI_STATE_FAIL; snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:timeout"); }
+        break;
+    case WIFI_STATE_SEND_CWMODE:
+        ESP_ClearBuffer(); ESP_Send("AT+CWMODE=1\r\n");
+        wifi_state = WIFI_STATE_WAIT_CWMODE;
+        wifi_state_tick = HAL_GetTick();
+        snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:STA");
+        break;
+    case WIFI_STATE_WAIT_CWMODE:
+        if (strstr(esp_rx, "OK") || strstr(esp_rx, "no change"))
+            wifi_state = WIFI_STATE_SEND_CWJAP;
+        else if (HAL_GetTick() - wifi_state_tick > 3000U)
+        { wifi_state = WIFI_STATE_FAIL; snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:mode fail"); }
+        break;
+    case WIFI_STATE_SEND_CWJAP:
+        ESP_ClearBuffer();
+        snprintf(cmd, sizeof(cmd), "AT+CWJAP=\"%s\",\"%s\"\r\n", WIFI_SSID, WIFI_PASS);
+        ESP_Send(cmd);
+        wifi_state = WIFI_STATE_WAIT_CWJAP;
+        wifi_state_tick = HAL_GetTick();
+        snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:connect");
+        snprintf(wifi_line2, sizeof(wifi_line2), "SSID:%s", WIFI_SSID);
+        break;
+    case WIFI_STATE_WAIT_CWJAP:
+        if (strstr(esp_rx, "WIFI CONNECTED") || strstr(esp_rx, "GOT IP") || strstr(esp_rx, "OK"))
+            wifi_state = WIFI_STATE_SEND_CIFSR;
+        else if (strstr(esp_rx, "FAIL") || strstr(esp_rx, "ERROR"))
+        { wifi_state = WIFI_STATE_FAIL; snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:join fail"); }
+        else if (HAL_GetTick() - wifi_state_tick > 20000U)
+        { wifi_state = WIFI_STATE_FAIL; snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:join tout"); }
+        break;
+    case WIFI_STATE_SEND_CIFSR:
+        ESP_ClearBuffer(); ESP_Send("AT+CIFSR\r\n");
+        wifi_state = WIFI_STATE_WAIT_CIFSR;
+        wifi_state_tick = HAL_GetTick();
+        snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:linked");
+        snprintf(wifi_line2, sizeof(wifi_line2), "IP:reading");
+        break;
+    case WIFI_STATE_WAIT_CIFSR:
+        p = strstr(esp_rx, "STAIP,");
+        if (p != NULL)
+        {
+            char ip_buf[24] = {0}; int i = 0;
+            p = strchr(p, '"');
+            if (p != NULL)
+            {
+                p++;
+                while (*p && *p != '"' && i < (int)(sizeof(ip_buf)-1)) ip_buf[i++] = *p++;
+                ip_buf[i] = '\0';
+                snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:OK");
+                snprintf(wifi_line2, sizeof(wifi_line2), "IP:%s", ip_buf);
+                wifi_state = WIFI_STATE_DONE;
+            }
+        }
+        else if (HAL_GetTick() - wifi_state_tick > 5000U)
+        {
+            snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:OK");
+            snprintf(wifi_line2, sizeof(wifi_line2), "IP:n/a");
+            wifi_state = WIFI_STATE_DONE;
+        }
+        break;
+    case WIFI_STATE_DONE: break;
+    case WIFI_STATE_FAIL: break;
+    default: wifi_state = WIFI_STATE_FAIL; break;
+    }
+}
+
+/* ?? LCD ?? */
 static void LCD_UpdateUI(uint32_t x_raw, uint32_t y_raw,
                          GPIO_PinState jsw_now, int32_t temp_raw)
 {
-    char x_str[24], y_str[24], btn_str[8], last_str[24];
-    char laser_str[32], temp_str[24], esp_cmd_str[8];
+    char x_str[24], y_str[24], btn_str[8], last_str[24], laser_str[24], temp_str[24];
 
     uint32_t xcV = (x_raw * 330U) / 4095U;
     uint32_t ycV = (y_raw * 330U) / 4095U;
 
-    snprintf(x_str,    sizeof(x_str),    "%4lu %lu.%02luV", x_raw, xcV/100U, xcV%100U);
-    snprintf(y_str,    sizeof(y_str),    "%4lu %lu.%02luV", y_raw, ycV/100U, ycV%100U);
+    snprintf(x_str, sizeof(x_str), "%4lu %lu.%02luV", x_raw, xcV/100U, xcV%100U);
+    snprintf(y_str, sizeof(y_str), "%4lu %lu.%02luV", y_raw, ycV/100U, ycV%100U);
     strcpy(btn_str, (jsw_now == GPIO_PIN_RESET) ? "ON " : "OFF");
 
     if (jsw_has_been_pressed)
@@ -561,24 +566,20 @@ static void LCD_UpdateUI(uint32_t x_raw, uint32_t y_raw,
         uint32_t e = HAL_GetTick() - last_jsw_press_tick;
         snprintf(last_str, sizeof(last_str), "%lu.%02lus", e/1000U, (e%1000U)/10U);
     }
-    else
-        strcpy(last_str, "never");
+    else strcpy(last_str, "never");
 
-    snprintf(laser_str,   sizeof(laser_str),   "%s", laser_line);
-    snprintf(esp_cmd_str, sizeof(esp_cmd_str),  "%s", esp_cmd_rx);
+    snprintf(laser_str, sizeof(laser_str), "%s", laser_line);
 
-    if (temp_raw <= -2032)
-        strcpy(temp_str, "NO SENSOR");
+    if (temp_raw <= -2032) strcpy(temp_str, "NO SENSOR");
     else
     {
         int32_t t = temp_raw, neg = 0;
         if (t < 0) { neg = 1; t = -t; }
         int32_t whole = t/16, frac = ((t%16)*100)/16;
         if (neg) snprintf(temp_str, sizeof(temp_str), "-%ld.%02ldC", whole, frac);
-        else     snprintf(temp_str, sizeof(temp_str),  "%ld.%02ldC", whole, frac);
+        else     snprintf(temp_str, sizeof(temp_str), "%ld.%02ldC",  whole, frac);
     }
 
-/* x1 starts well before the value so no glyph edge is ever left behind */
 #define LCD_IF_CHANGED(prev, cur, x1, y1, x2, y2) \
     if (strcmp((prev),(cur)) != 0) { \
         LCD_Clear((x1),(y1),(x2),(y2), WHITE); \
@@ -586,16 +587,15 @@ static void LCD_UpdateUI(uint32_t x_raw, uint32_t y_raw,
         strcpy((prev),(cur)); \
     }
 
-    LCD_IF_CHANGED(prev_wifi1,   wifi_line1,   50,  40, 239,  64)
-    LCD_IF_CHANGED(prev_wifi2,   wifi_line2,   30,  65, 239,  89)
-    LCD_IF_CHANGED(prev_x,       x_str,        25, 105, 239, 129)
-    LCD_IF_CHANGED(prev_y,       y_str,        25, 135, 239, 159)
-    LCD_IF_CHANGED(prev_btn,     btn_str,      45, 165,  95, 189)
-    LCD_IF_CHANGED(prev_last,    last_str,    130, 165, 239, 189)
-    LCD_IF_CHANGED(prev_laser,   laser_str,    60, 195, 239, 219)
-    LCD_IF_CHANGED(prev_temp,    temp_str,     60, 225, 239, 249)
-    LCD_IF_CHANGED(prev_motor,   motor_label,  60, 253, 239, 277)
-    LCD_IF_CHANGED(prev_esp_cmd, esp_cmd_str,  35, 283, 239, 307)
+    LCD_IF_CHANGED(prev_wifi1, wifi_line1,  60,  40, 239,  60)
+    LCD_IF_CHANGED(prev_wifi2, wifi_line2,  35,  65, 239,  85)
+    LCD_IF_CHANGED(prev_x,     x_str,       35, 105, 239, 125)
+    LCD_IF_CHANGED(prev_y,     y_str,       35, 135, 239, 155)
+    LCD_IF_CHANGED(prev_btn,   btn_str,     55, 165,  95, 185)
+    LCD_IF_CHANGED(prev_last,  last_str,   140, 165, 239, 185)
+    LCD_IF_CHANGED(prev_laser, laser_str,   75, 195, 239, 215)
+    LCD_IF_CHANGED(prev_temp,  temp_str,    75, 225, 239, 245)
+    LCD_IF_CHANGED(prev_motor, motor_label, 75, 253, 239, 274)
 
 #undef LCD_IF_CHANGED
 }
@@ -604,20 +604,17 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
     if (huart->Instance == USART3)
     {
-        char c = (char)esp_rx_byte;
-
         if (esp_rx_index < sizeof(esp_rx)-1)
-        {
-            esp_rx[esp_rx_index++] = c;
-            esp_rx[esp_rx_index]   = '\0';
-        }
-
+        { esp_rx[esp_rx_index++] = esp_rx_byte; esp_rx[esp_rx_index] = '\0'; }
         esp_rx_done = 1;
         HAL_UART_Receive_IT(&huart3, &esp_rx_byte, 1);
     }
 }
 /* USER CODE END 0 */
 
+/* ============================================================
+ *  main
+ * ============================================================ */
 int main(void)
 {
     HAL_Init();
@@ -633,12 +630,12 @@ int main(void)
     HAL_ADCEx_Calibration_Start(&hadc2);
 
     HAL_GPIO_WritePin(LASER_PORT, LASER_PIN, GPIO_PIN_RESET);
-    RGB_Set(1, 1, 1);
+    MOTOR_L_OFF();
+    MOTOR_R_OFF();
+    RGB_Set(1, 1, 1);   /* White = idle/ready at boot */
 
     LCD_INIT();
     LCD_Clear(0, 0, 240, 320, WHITE);
-
-    /* Static labels — drawn once, never cleared */
     LCD_DrawString( 70,  10, "Lai Man To");
     LCD_DrawString( 10,  40, "WiFi:");
     LCD_DrawString( 10,  65, "IP:");
@@ -649,18 +646,11 @@ int main(void)
     LCD_DrawString( 10, 195, "Laser:");
     LCD_DrawString( 10, 225, "Temp:");
     LCD_DrawString( 10, 253, "Motor:");
-    LCD_DrawString( 10, 283, "ESP:");
+    LCD_DrawString( 75, 225, "NO SENSOR");
+    LCD_DrawString( 75, 253, "STOP");
 
-    /* Initial values */
-    LCD_DrawString( 60, 225, "NO SENSOR");
-    LCD_DrawString( 60, 253, "STOP");
-    LCD_DrawString( 35, 283, "none");
-
-    strcpy(prev_temp,    "NO SENSOR");
-    strcpy(prev_motor,   "STOP");
-    strcpy(prev_esp_cmd, "none");
-
-    Motor_SendCmd('S');
+    strcpy(prev_temp,  "NO SENSOR");
+    strcpy(prev_motor, "STOP");
 
     ESP_ClearBuffer();
     ESP_StartReceiveIT();
@@ -673,23 +663,16 @@ int main(void)
         GPIO_PinState k1_now  = HAL_GPIO_ReadPin(K1_PORT, K1_PIN);
         GPIO_PinState jsw_now = HAL_GPIO_ReadPin(JOY_SW_PORT, JOY_SW_PIN);
 
-        /* K1: 2s forward burst then stop */
+        /* K1 falling edge ??motor test */
         if ((last_k1_state == GPIO_PIN_SET) && (k1_now == GPIO_PIN_RESET))
         {
             HAL_Delay(20);
             if (HAL_GPIO_ReadPin(K1_PORT, K1_PIN) == GPIO_PIN_RESET)
-            {
-                Motor_SendCmd('F');
-                strcpy(motor_label, "K1:FWD");
-                HAL_Delay(2000);
-                Motor_SendCmd('S');
-                strcpy(motor_label, "K1:STOP");
-                last_motor_cmd = 'S';
-            }
+            { k1_seq_state = K1_SEQ_FWD; k1_seq_tick = HAL_GetTick(); }
         }
         last_k1_state = k1_now;
 
-        /* SW falling edge → ARMED (blue) */
+        /* SW falling edge ??arm (blue) */
         if ((last_jsw_state == GPIO_PIN_SET) && (jsw_now == GPIO_PIN_RESET))
         {
             HAL_Delay(20);
@@ -697,33 +680,28 @@ int main(void)
             {
                 last_jsw_press_tick  = HAL_GetTick();
                 jsw_has_been_pressed = 1U;
-                laser_on_press();
+                laser_on_press();   /* IDLE ??ARMED (blue) */
             }
         }
 
-        /* SW rising edge → PRIMING (green) */
+        /* SW rising edge ??release ??start green+prime countdown */
         if ((last_jsw_state == GPIO_PIN_RESET) && (jsw_now == GPIO_PIN_SET))
         {
             HAL_Delay(20);
             if (HAL_GPIO_ReadPin(JOY_SW_PORT, JOY_SW_PIN) == GPIO_PIN_SET)
-                laser_on_release();
+                laser_on_release(); /* ARMED ??PRIMING (green 1s) */
         }
 
         last_jsw_state = jsw_now;
 
-        /* DS18B20 every 2s */
+        /* DS18B20 every 2 s */
         if (HAL_GetTick() - ds18b20_last_tick >= 2000U)
-        {
-            ds18b20_raw       = DS18B20_ReadRaw();
-            ds18b20_last_tick = HAL_GetTick();
-        }
+        { ds18b20_raw = DS18B20_ReadRaw(); ds18b20_last_tick = HAL_GetTick(); }
 
         laser_update();
         RGB_Update_From_State();
-
-        if (wifi_state == WIFI_STATE_DONE || wifi_state == WIFI_STATE_FAIL)
-            Drive_Task(x_raw, y_raw);
-
+        K1_Seq_Task();
+        Drive_Task(x_raw, y_raw);
         WiFi_Task();
         LCD_UpdateUI(x_raw, y_raw, jsw_now, ds18b20_raw);
 
@@ -731,6 +709,9 @@ int main(void)
     }
 }
 
+/* ============================================================
+ *  Peripheral inits
+ * ============================================================ */
 void SystemClock_Config(void)
 {
     RCC_OscInitTypeDef       o = {0};
@@ -833,34 +814,45 @@ static void MX_GPIO_Init(void)
     HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12,    GPIO_PIN_SET);
     HAL_GPIO_WritePin(GPIOE, GPIO_PIN_1,     GPIO_PIN_SET);
     HAL_GPIO_WritePin(LASER_PORT, LASER_PIN, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(GPIOB,
+        MOT_L_IN1_PIN | MOT_L_IN2_PIN | MOT_R_IN3_PIN | MOT_R_IN4_PIN,
+        GPIO_PIN_RESET);
     HAL_GPIO_WritePin(RGB_R_PORT, RGB_R_PIN, GPIO_PIN_SET);
     HAL_GPIO_WritePin(RGB_G_PORT, RGB_G_PIN, GPIO_PIN_SET);
     HAL_GPIO_WritePin(RGB_B_PORT, RGB_B_PIN, GPIO_PIN_SET);
 
-    g.Pin = GPIO_PIN_12;
-    g.Mode = GPIO_MODE_OUTPUT_PP;
-    g.Pull = GPIO_NOPULL;
-    g.Speed = GPIO_SPEED_FREQ_HIGH;
+    /* LCD RS PD12 */
+    g.Pin = GPIO_PIN_12; g.Mode = GPIO_MODE_OUTPUT_PP;
+    g.Pull = GPIO_NOPULL; g.Speed = GPIO_SPEED_FREQ_HIGH;
     HAL_GPIO_Init(GPIOD, &g);
 
+    /* LCD CS PE1 */
     g.Pin = GPIO_PIN_1;
     HAL_GPIO_Init(GPIOE, &g);
 
-    g.Pin = LASER_PIN;
-    g.Speed = GPIO_SPEED_FREQ_LOW;
+    /* Laser PC4 */
+    g.Pin = LASER_PIN; g.Speed = GPIO_SPEED_FREQ_LOW;
     HAL_GPIO_Init(LASER_PORT, &g);
 
+    /* Motor PB6 PB7 PB8 PB9 */
+    g.Pin = MOT_L_IN1_PIN | MOT_L_IN2_PIN | MOT_R_IN3_PIN | MOT_R_IN4_PIN;
+    HAL_GPIO_Init(GPIOB, &g);
+
+    /* RGB PB5 PB0 PB1 */
     g.Pin = RGB_R_PIN | RGB_G_PIN | RGB_B_PIN;
     HAL_GPIO_Init(GPIOB, &g);
 
+    /* Joystick SW PC2 ??input pull-up */
     g.Pin  = JOY_SW_PIN;
     g.Mode = GPIO_MODE_INPUT;
     g.Pull = GPIO_PULLUP;
     HAL_GPIO_Init(JOY_SW_PORT, &g);
 
+    /* K1 PC13 ??input pull-up */
     g.Pin = K1_PIN;
     HAL_GPIO_Init(K1_PORT, &g);
 
+    /* DS18B20 PC8 ??input initially */
     g.Pin  = DS18B20_PIN;
     g.Pull = GPIO_NOPULL;
     HAL_GPIO_Init(DS18B20_PORT, &g);
@@ -896,15 +888,9 @@ static void MX_FSMC_Init(void)
 }
 
 void Error_Handler(void)
-{
-    __disable_irq();
-    while (1) {}
-}
+{ __disable_irq(); while (1) {} }
 
 #ifdef USE_FULL_ASSERT
 void assert_failed(uint8_t *file, uint32_t line)
-{
-    (void)file;
-    (void)line;
-}
+{ (void)file; (void)line; }
 #endif
