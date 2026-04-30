@@ -103,8 +103,8 @@ typedef enum {
 #define LSEG_F_PORT         GPIOB
 #define LSEG_G_PIN          GPIO_PIN_6
 #define LSEG_G_PORT         GPIOB
-#define LSEG_DP_PIN         GPIO_PIN_7
-#define LSEG_DP_PORT        GPIOE
+#define LSEG_DP_PIN         GPIO_PIN_7 //placeholder
+#define LSEG_DP_PORT        GPIOE //placeholder
 
 #define RSEG_A_PIN          GPIO_PIN_14
 #define RSEG_A_PORT         GPIOB
@@ -120,6 +120,96 @@ typedef enum {
 #define RSEG_F_PORT         GPIOB
 #define RSEG_G_PIN          GPIO_PIN_12
 #define RSEG_G_PORT         GPIOB
+
+
+
+
+/* ================================================================
+
+
+
+#define LCD_CS_PIN       GPIO_PIN_7   // PD7  — FSMC_NE1  — Chip Select (active LOW)
+#define LCD_CS_PORT      GPIOD
+
+#define LCD_RS_PIN       GPIO_PIN_11  // PD11 — FSMC_A16  — Register Select (0=cmd, 1=data)
+#define LCD_RS_PORT      GPIOD
+
+#define LCD_WR_PIN       GPIO_PIN_5   // PD5  — FSMC_NWE  — Write strobe (active LOW)
+#define LCD_WR_PORT      GPIOD
+
+#define LCD_RD_PIN       GPIO_PIN_4   // PD4  — FSMC_NOE  — Read strobe  (active LOW)
+#define LCD_RD_PORT      GPIOD
+
+#define LCD_BL_PIN       GPIO_PIN_12  // PD12 — GPIO OUT  — Backlight (HIGH = on)
+#define LCD_BL_PORT      GPIOD
+
+#define LCD_RST_PIN      GPIO_PIN_1   // PE1  — GPIO OUT  — Reset (active LOW)
+#define LCD_RST_PORT     GPIOE
+
+// ── Data bus D0–D15 (16-bit)
+#define LCD_D0_PIN       GPIO_PIN_14  // PD14 — FSMC_D0
+#define LCD_D0_PORT      GPIOD
+
+#define LCD_D1_PIN       GPIO_PIN_15  // PD15 — FSMC_D1
+#define LCD_D1_PORT      GPIOD
+
+#define LCD_D2_PIN       GPIO_PIN_0   // PD0  — FSMC_D2
+#define LCD_D2_PORT      GPIOD
+
+#define LCD_D3_PIN       GPIO_PIN_1   // PD1  — FSMC_D3
+#define LCD_D3_PORT      GPIOD
+
+#define LCD_D4_PIN       GPIO_PIN_7   // PE7  — FSMC_D4
+#define LCD_D4_PORT      GPIOE
+
+#define LCD_D5_PIN       GPIO_PIN_8   // PE8  — FSMC_D5
+#define LCD_D5_PORT      GPIOE
+
+#define LCD_D6_PIN       GPIO_PIN_9   // PE9  — FSMC_D6
+#define LCD_D6_PORT      GPIOE
+
+#define LCD_D7_PIN       GPIO_PIN_10  // PE10 — FSMC_D7
+#define LCD_D7_PORT      GPIOE
+
+#define LCD_D8_PIN       GPIO_PIN_11  // PE11 — FSMC_D8
+#define LCD_D8_PORT      GPIOE
+
+#define LCD_D9_PIN       GPIO_PIN_12  // PE12 — FSMC_D9
+#define LCD_D9_PORT      GPIOE
+
+#define LCD_D10_PIN      GPIO_PIN_13  // PE13 — FSMC_D10
+#define LCD_D10_PORT     GPIOE
+
+#define LCD_D11_PIN      GPIO_PIN_14  // PE14 — FSMC_D11
+#define LCD_D11_PORT     GPIOE
+
+#define LCD_D12_PIN      GPIO_PIN_15  // PE15 — FSMC_D12
+#define LCD_D12_PORT     GPIOE
+
+#define LCD_D13_PIN      GPIO_PIN_8   // PD8  — FSMC_D13
+#define LCD_D13_PORT     GPIOD
+
+#define LCD_D14_PIN      GPIO_PIN_9   // PD9  — FSMC_D14
+#define LCD_D14_PORT     GPIOD
+
+#define LCD_D15_PIN      GPIO_PIN_10  // PD10 — FSMC_D15
+#define LCD_D15_PORT     GPIOD
+
+
+// PD3  — FSMC_CLK    — not used in async mode but reserved
+// PD6  — FSMC_NWAIT  — not used but reserved
+// PE0  — FSMC_NBL0   — byte lane 0, reserved
+// PE1  — FSMC_NBL1   — byte lane 1, doubles as RST above
+
+
+   QUICK REFERENCE — ports blocked by LCD
+   GPIOD: pins 0,1,4,5,6,7,8,9,10,11,12,14,15  → ALL TAKEN
+          only PD2, PD3, PD13 potentially free
+   GPIOE: pins 0,1,7,8,9,10,11,12,13,14,15     → ALL TAKEN
+          only PE2,PE3,PE4,PE5,PE6 free (K2-K4 buttons on PE2-4)
+   ================================================================ */
+
+
 /* USER CODE END PD */
 
 ADC_HandleTypeDef  hadc1;
