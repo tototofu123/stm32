@@ -554,7 +554,7 @@ static void Motor_SendCmd(char cmd, uint8_t speed)
     }
 
     snprintf(tx, sizeof(tx), "%c%03u\n", cmd, speed);
-    HAL_UART_Transmit(&huart3, (uint8_t *)tx, strlen(tx), 20);
+    sendAT(cmd);
 
     last_motor_cmd = cmd;
     last_motor_speed = speed;
@@ -691,147 +691,46 @@ static void Drive_Task(uint32_t x_raw, uint32_t y_raw)
     Motor_SendCmd(cmd, speed);
 }
 
-static void ESP_Send(const char *cmd)
-{
-    HAL_UART_Transmit(&huart3, (uint8_t *)cmd, strlen(cmd), 1000);
+void sendAT(const char *cmd) {
+    HAL_UART_Transmit(&huart3, (uint8_t*)cmd, strlen(cmd), HAL_MAX_DELAY);
+    HAL_UART_Transmit(&huart3, (uint8_t*)"\r\n", 2, HAL_MAX_DELAY);
+    HAL_Delay(500);
 }
 
-static void ESP_ClearBuffer(void)
-{
-    memset(esp_rx, 0, sizeof(esp_rx));
-    esp_rx_index = 0;
-    esp_rx_done  = 0;
-}
-
-static void ESP_StartReceiveIT(void)
-{
-    HAL_UART_Receive_IT(&huart3, &esp_rx_byte, 1);
-}
-
-static void WiFi_Start(void)
-{
-    wifi_state      = WIFI_STATE_SEND_AT;
-    wifi_state_tick = HAL_GetTick();
-    snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:starting");
-    snprintf(wifi_line2, sizeof(wifi_line2), "IP:waiting");
-}
-
-static void WiFi_Task(void)
-{
-    char  cmd[96];
-    char *p;
-
-    if (wifi_state == WIFI_STATE_DONE || wifi_state == WIFI_STATE_FAIL)
-        return;
-
-    switch (wifi_state)
-    {
-    case WIFI_STATE_IDLE:
-        break;
-
-    case WIFI_STATE_SEND_AT:
-        ESP_ClearBuffer();
-        ESP_Send("AT\r\n");
-        wifi_state      = WIFI_STATE_WAIT_AT;
-        wifi_state_tick = HAL_GetTick();
-        snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:testing");
-        break;
-
-    case WIFI_STATE_WAIT_AT:
-        if (strstr(esp_rx, "OK"))
-            wifi_state = WIFI_STATE_SEND_CWMODE;
-        else if (HAL_GetTick() - wifi_state_tick > 2000U)
-        {
-            wifi_state = WIFI_STATE_FAIL;
-            snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:timeout");
-        }
-        break;
-
-    case WIFI_STATE_SEND_CWMODE:
-        ESP_ClearBuffer();
-        ESP_Send("AT+CWMODE=1\r\n");
-        wifi_state      = WIFI_STATE_WAIT_CWMODE;
-        wifi_state_tick = HAL_GetTick();
-        snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:STA");
-        break;
-
-    case WIFI_STATE_WAIT_CWMODE:
-        if (strstr(esp_rx, "OK") || strstr(esp_rx, "no change"))
-            wifi_state = WIFI_STATE_SEND_CWJAP;
-        else if (HAL_GetTick() - wifi_state_tick > 3000U)
-        {
-            wifi_state = WIFI_STATE_FAIL;
-            snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:mode fail");
-        }
-        break;
-
-    case WIFI_STATE_SEND_CWJAP:
-        ESP_ClearBuffer();
-        snprintf(cmd, sizeof(cmd), "AT+CWJAP=\"%s\",\"%s\"\r\n", WIFI_SSID, WIFI_PASS);
-        ESP_Send(cmd);
-        wifi_state      = WIFI_STATE_WAIT_CWJAP;
-        wifi_state_tick = HAL_GetTick();
-        snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:connect");
-        snprintf(wifi_line2, sizeof(wifi_line2), "SSID:%s", WIFI_SSID);
-        break;
-
-    case WIFI_STATE_WAIT_CWJAP:
-        if (strstr(esp_rx, "WIFI CONNECTED") || strstr(esp_rx, "GOT IP") || strstr(esp_rx, "OK"))
-            wifi_state = WIFI_STATE_SEND_CIFSR;
-        else if (strstr(esp_rx, "FAIL") || strstr(esp_rx, "ERROR"))
-        {
-            wifi_state = WIFI_STATE_FAIL;
-            snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:join fail");
-        }
-        else if (HAL_GetTick() - wifi_state_tick > 20000U)
-        {
-            wifi_state = WIFI_STATE_FAIL;
-            snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:join tout");
-        }
-        break;
-
-    case WIFI_STATE_SEND_CIFSR:
-        ESP_ClearBuffer();
-        ESP_Send("AT+CIFSR\r\n");
-        wifi_state      = WIFI_STATE_WAIT_CIFSR;
-        wifi_state_tick = HAL_GetTick();
-        snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:linked");
-        snprintf(wifi_line2, sizeof(wifi_line2), "IP:reading");
-        break;
-
-    case WIFI_STATE_WAIT_CIFSR:
-        p = strstr(esp_rx, "STAIP,");
-        if (p != NULL)
-        {
-            char ip_buf[24] = {0};
-            int i = 0;
-
-            p = strchr(p, '\"');
-            if (p != NULL)
-            {
-                p++;
-                while (*p && *p != '\"' && i < (int)(sizeof(ip_buf) - 1))
-                    ip_buf[i++] = *p++;
-                ip_buf[i] = '\0';
-
-                snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:OK");
-                snprintf(wifi_line2, sizeof(wifi_line2), "IP:%s", ip_buf);
-                wifi_state = WIFI_STATE_DONE;
-            }
-        }
-        else if (HAL_GetTick() - wifi_state_tick > 5000U)
-        {
-            snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:OK");
-            snprintf(wifi_line2, sizeof(wifi_line2), "IP:n/a");
-            wifi_state = WIFI_STATE_DONE;
-        }
-        break;
-
-    default:
-        wifi_state = WIFI_STATE_FAIL;
-        break;
+void readResponse(void) {
+    char buffer[128] = {0};
+    HAL_UART_Receive(&huart3, (uint8_t*)buffer, sizeof(buffer)-1, 1000);
+    if (strlen(buffer) > 0){
+    	if (buffer == "Hello from ESP01s client!"){
+    		snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:connect");
+    	}
     }
 }
+
+void WifiSetUp(void){
+	// 1. Test AT
+	     sendAT("AT");
+	     //readResponse();
+
+
+	     // 2. Set AP mode
+	     sendAT("AT+CWMODE=2");
+	    // readResponse();
+
+	     // 3. Configure AP SSID/password
+	     sendAT("AT+CWSAP=\"ESP8266_AP_01\",\"12345678\",5,3");
+	     //readResponse();
+
+	     // Check AP IP
+	     sendAT("AT+CIFSR");
+	    // readResponse();
+
+	     // 4. Start TCP server
+	     sendAT("AT+CIPMUX=1");
+	     sendAT("AT+CIPSERVER=1,80");
+	     readResponse();
+}
+
 
 static void ds_delay_us(uint16_t us)
 {
@@ -1064,9 +963,7 @@ int main(void)
     strcpy(prev_esp_cmd, "S");
     strcpy(prev_seg,     "00");
 
-    ESP_ClearBuffer();
-    ESP_StartReceiveIT();
-    WiFi_Start();
+    WifiSetUp();
 
     while (1)
     {
@@ -1128,7 +1025,6 @@ int main(void)
         else
             snprintf(motion_line, sizeof(motion_line), "WAIT  %3u%%", 0);
 
-        WiFi_Task();
 
         if ((now - lcd_fast_tick) >= LCD_FAST_UPDATE_MS)
         {
