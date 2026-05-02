@@ -25,6 +25,7 @@ extern mode2_input_method_t selected_input;
 extern char m2_cmd_history[11];  // Last 10 commands + null terminator
 
 void Mode2_Init(void);
+void Mode2_ResetCanvas(void);
 void Mode2_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_click, uint8_t fire_pressed, uint8_t ts_pressed, uint8_t ts_click, uint16_t ts_x, uint16_t ts_y);
 
 #endif // MODE_2_H

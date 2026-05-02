@@ -372,6 +372,15 @@ void LCD_DrawLine ( uint16_t usC1, uint16_t usP1, uint16_t usC2, uint16_t usP2, 
 }
 
 
+uint16_t Current_TextColor = BLUE;
+uint16_t Current_TextBackColor = WHITE;
+
+void LCD_SetColors(uint16_t text, uint16_t back)
+{
+    Current_TextColor = text;
+    Current_TextBackColor = back;
+}
+
 void LCD_DrawChar ( uint16_t usC, uint16_t usP, const char cChar )
 {
 	uint8_t ucTemp, ucRelativePositon, ucPage, ucColumn;
@@ -390,17 +399,15 @@ void LCD_DrawChar ( uint16_t usC, uint16_t usP, const char cChar )
 		for ( ucColumn = 0; ucColumn < WIDTH_EN_CHAR; ucColumn ++ )
 		{
 			if ( ucTemp & 0x01 )
-				LCD_Write_Data ( 0x001F );
+				LCD_Write_Data ( Current_TextColor );
 
 			else
-				LCD_Write_Data (  0xFFFF );
+				LCD_Write_Data (  Current_TextBackColor );
 
 			ucTemp >>= 1;
 
 		}
-
 	}
-
 }
 
 

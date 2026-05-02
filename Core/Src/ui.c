@@ -169,26 +169,81 @@ void LCD_DrawMode2InputSelect(void) {
     LCD_Clear(0, 0, 240, 40, UI_HEAD);
     LCD_TEXT(40, 10, "SELECT CONTROL");
     
-    // Joystick Box
-    LCD_Clear(18, 68, 204, 84, MY_BLACK);
-    LCD_Clear(20, 70, 200, 80, (selected_input == 0) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(50, 100, "[JOYSTICK]");
+    // Joystick Section
+    if (selected_input == M2_INPUT_JOYSTICK) {
+        LCD_Clear(10, 70, 220, 80, BLUE);
+        LCD_Clear(12, 72, 216, 76, WHITE);
+        LCD_TEXT(40, 102, ">> [JOYSTICK] <<");
+    } else {
+        LCD_Clear(30, 80, 180, 60, GREY);
+        LCD_TEXT(55, 102, "[JOYSTICK]");
+    }
     
-    // Touch Box
-    LCD_Clear(18, 168, 204, 84, MY_BLACK);
-    LCD_Clear(20, 170, 200, 80, (selected_input == 1) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(60, 200, "[TOUCH SCREEN]");
+    // Touch Section
+    if (selected_input == M2_INPUT_TOUCH) {
+        LCD_Clear(10, 170, 220, 80, MAGENTA);
+        LCD_Clear(12, 172, 216, 76, WHITE);
+        LCD_TEXT(25, 202, ">> [TOUCH SCREEN] <<");
+    } else {
+        LCD_Clear(30, 180, 180, 60, GREY);
+        LCD_TEXT(45, 202, "[TOUCH SCREEN]");
+    }
     
     LCD_Clear(0, 280, 240, 40, UI_BOTTOM);
-    LCD_TEXT(20, 290, "K1:Toggle  K2:Confirm");
+    LCD_TEXT(20, 292, "K1:Switch  K2:Confirm");
+}
+
+void LCD_UpdateMode2InputSelect(void) {
+    // Just refresh the two control boxes
+    // Joystick Section
+    if (selected_input == M2_INPUT_JOYSTICK) {
+        LCD_Clear(10, 70, 220, 80, BLUE);
+        LCD_Clear(12, 72, 216, 76, WHITE);
+        LCD_SetColors(BLUE, WHITE);
+        LCD_TEXT(40, 102, ">> [JOYSTICK] <<");
+    } else {
+        LCD_Clear(30, 80, 180, 60, GREY);
+        LCD_SetColors(BLUE, GREY);
+        LCD_TEXT(55, 102, "[JOYSTICK]");
+    }
+    
+    // Touch Section
+    if (selected_input == M2_INPUT_TOUCH) {
+        LCD_Clear(10, 170, 220, 80, MAGENTA);
+        LCD_Clear(12, 172, 216, 76, WHITE);
+        LCD_SetColors(MAGENTA, WHITE);
+        LCD_TEXT(25, 202, ">> [TOUCH SCREEN] <<");
+    } else {
+        LCD_Clear(30, 180, 180, 60, GREY);
+        LCD_SetColors(BLUE, GREY);
+        LCD_TEXT(45, 202, "[TOUCH SCREEN]");
+    }
+    LCD_SetColors(BLUE, WHITE); // Reset to default
+}
+
+void LCD_DrawMode2CommandHistory(char cmd, uint8_t slot, uint8_t is_new)
+{
+    uint16_t x = 5 + (slot * 23);
+    uint16_t y = 292;
+    
+    if (is_new) {
+        LCD_SetColors(GREEN, UI_BOTTOM);
+    } else {
+        LCD_SetColors(BLUE, UI_BOTTOM);
+    }
+    
+    LCD_DrawChar(x, y, cmd);
+    LCD_SetColors(BLUE, WHITE); // Reset
 }
 
 void LCD_DrawMode2Canvas(void) 
 {
     LCD_Clear(0, 0, 240, 320, UI_BG);
     LCD_Clear(0, 0, 240, 20, UI_HEAD);
+    LCD_SetColors(BLUE, UI_HEAD);
     LCD_TEXT(10, 5, "DRAW FIGHT");
     
+    LCD_SetColors(BLUE, UI_BG);
     if (m2_input_method == M2_INPUT_TOUCH) {
         LCD_TEXT(10, 30, "Click on LCD to start");
         LCD_TEXT(10, 48, "the route drawing");
@@ -208,6 +263,7 @@ void LCD_DrawMode2ResetConfirm(void)
     LCD_Clear(20, 100, 200, 120, MY_BLACK);
     LCD_Clear(22, 102, 196, 116, WHITE);
     
+    LCD_SetColors(BLUE, WHITE);
     LCD_TEXT(40, 115, "RESET CANVAS?");
     LCD_TEXT(40, 140, "K1: REGRET (NO)");
     LCD_TEXT(40, 165, "K2: CONFIRM (YES)");
