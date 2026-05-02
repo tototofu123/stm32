@@ -3,10 +3,10 @@
   ******************************************************************************
   * @file           : main.c
   * @brief          : Joystick + laser + RGB LED + LCD + UART motor commands
-  * Added boot menu flow:
-  * MODE SELECT -> CAR SELECT -> GAME
-  * Mode 1 = current gameplay
-  * Mode 2/3 = placeholder
+  *                   Added boot menu flow:
+  *                   MODE SELECT -> CAR SELECT -> GAME
+  *                   Mode 1 = current gameplay
+  *                   Mode 2/3 = placeholder
   ******************************************************************************
   */
 /* USER CODE END Header */
@@ -83,18 +83,8 @@ typedef enum {
 #define LASER_FIRE_MS       1000U
 #define LASER_COOLDOWN_MS   3000U
 
-#define BTN_DEBOUNCE_MS     120U
-
-#define BEEP_PIN            GPIO_PIN_8
-#define BEEP_PORT           GPIOA
-#define BEEP_SHORT_MS       80U
-#define BEEP_LONG_MS        500U
-
 #define K1_PIN              GPIO_PIN_0
 #define K1_PORT             GPIOA
-
-#define CAP_TOUCH_PIN       GPIO_PIN_1
-#define CAP_TOUCH_PORT      GPIOA
 
 #define K2_PIN              GPIO_PIN_13
 #define K2_PORT             GPIOC
@@ -180,12 +170,6 @@ SRAM_HandleTypeDef hsram1;
 GPIO_PinState last_k1_state  = GPIO_PIN_RESET;
 GPIO_PinState last_k2_state  = GPIO_PIN_RESET;
 GPIO_PinState last_jsw_state = GPIO_PIN_SET;
-GPIO_PinState last_touch_state = GPIO_PIN_SET; // Touch key is active-low (pulled up)
-
-uint32_t last_k1_event_tick = 0U;
-uint32_t last_k2_event_tick = 0U;
-uint8_t turn_delay_active = 0U;
-char turn_target_cmd = 'S';
 
 app_state_t app_state = APP_MODE_SELECT;
 app_state_t last_drawn_state = (app_state_t)255;
@@ -237,14 +221,10 @@ uint8_t seg_dp = 0;
 
 uint32_t lcd_fast_tick = 0;
 uint32_t lcd_slow_tick = 0;
-
-uint8_t  buzzer_active   = 0U;
-uint32_t buzzer_tick     = 0U;
-uint32_t buzzer_duration = 0U;
-
-// Touch visual latch variables
-uint8_t  touch_display_flag = 0U;
-uint32_t touch_display_tick = 0U;
+uint32_t last_k1_event_tick = 0U;
+uint32_t last_k2_event_tick = 0U;
+uint8_t turn_delay_active = 0U;
+char turn_target_cmd = 'S';
 /* USER CODE END PV */
 
 void SystemClock_Config(void);
@@ -266,10 +246,6 @@ static void     laser_on_press(void);
 static void     laser_on_release(void);
 static void     laser_update(void);
 static void     RGB_Update_From_State(void);
-static void     Buzzer_Set(uint8_t on);
-static void     Buzzer_BeepShort(void);
-static void     Buzzer_BeepLong(void);
-static void     Buzzer_Task(void);
 static void     LCD_DrawModeSelect(void);
 static void     LCD_DrawCarSelect(void);
 static void     LCD_DrawGameLayout(void);
@@ -278,37 +254,6 @@ static void     LCD_UpdateCarSelection(void);
 static void     LCD_UpdateGameFast(uint32_t x_raw, uint32_t y_raw);
 static void     LCD_UpdateGameSlow(uint8_t fire_pressed);
 static void     LCD_ClearTextField(uint16_t x, uint16_t y, uint16_t chars, uint16_t bg);
-static const char *MODE_Name(game_mode_t mode);
-static const char *CAR_Code(car_type_t car);
-static const char *CAR_Label(car_type_t car);
-static uint32_t car_prime_ms(void);
-static uint32_t car_fire_ms(void);
-static uint32_t car_cooldown_ms(void);
-static uint8_t  car_apply_speed_cap(char cmd, uint8_t speed_percent);
-static uint8_t  car_allows_move_while_firing(void);
-static uint8_t  car_uses_k2_fire(void);
-static uint8_t  car_auto_fire_enabled(void);
-static uint32_t car_turn_delay_ms(void);
-static void     ds_pin_out(void);
-static void     ds_pin_in(void);
-static void     ds_delay_us(uint16_t us);
-static uint8_t  ds_start(void);
-static void     ds_write(uint8_t data);
-static uint8_t  ds_read_byte(void);
-static int32_t  DS18B20_ReadRaw(void);
-static void     SEG_WritePin(GPIO_TypeDef *port, uint16_t pin, uint8_t on);
-static void     SEG_AllOff(void);
-static void     SEG_ShowLeft(uint8_t d, uint8_t dp);
-static void     SEG_ShowRight(uint8_t d);
-static void     SEG_ShowPair(uint8_t left, uint8_t right, uint8_t dp);
-static void     SEG_ShowTenths(int t);
-static void     SEG_StartCooldownCountdown(uint32_t cooldown_ms);
-static void     SEG_Task(void);
-void sendAT(const char *cmd);
-void readResponse(void);
-void WifiSetUp(void);
-
-/* USER CODE BEGIN 0 */
 static const char *MODE_Name(game_mode_t mode)
 {
     switch (mode)
@@ -390,22 +335,27 @@ static uint8_t car_apply_speed_cap(char cmd, uint8_t speed_percent)
 {
     uint16_t max_speed = 100U;
     uint16_t scaled;
+
     switch (selected_car)
     {
         case CAR_V1:
             max_speed = 70U;
             break;
+
         case CAR_V4:
             if ((cmd == 'F') || (cmd == 'L') || (cmd == 'R'))
                 max_speed = 200U;
             break;
+
         case CAR_V6:
             max_speed = 60U;
             break;
+
         default:
             max_speed = 100U;
             break;
     }
+
     scaled = ((uint16_t)speed_percent * max_speed) / 100U;
     if (scaled > 255U) scaled = 255U;
     return (uint8_t)scaled;
@@ -675,6 +625,7 @@ static void laser_on_press(void)
 static void laser_on_release(void)
 {
     if (laser_state != LASER_ARMED) return;
+
     laser_state = LASER_PRIMING;
     laser_tick = HAL_GetTick();
     strcpy(laser_line, "CHARGING");
@@ -769,68 +720,25 @@ static void RGB_Update_From_State(void)
     switch (laser_state)
     {
         case LASER_ARMED:
-            RGB_Set(0, 0, 1);   /* blue */
+            RGB_Set(0, 0, 1);
             break;
+
         case LASER_PRIMING:
-            RGB_Set(1, 1, 0);   /* yellow */
+            RGB_Set(1, 1, 0);
             break;
+
         case LASER_FIRING:
-            RGB_Set(0, 1, 0);   /* green */
+            RGB_Set(0, 1, 0);
             break;
+
         case LASER_COOLDOWN:
-            RGB_Set(1, 0, 0);   /* red */
+            RGB_Set(1, 0, 0);
             break;
+
         case LASER_IDLE:
         default:
-            RGB_Set(1, 1, 1);   /* white */
+            RGB_Set(1, 1, 1);
             break;
-    }
-}
-
-static void Buzzer_Set(uint8_t on)
-{
-    HAL_GPIO_WritePin(BEEP_PORT, BEEP_PIN, on ? GPIO_PIN_SET : GPIO_PIN_RESET);
-}
-
-static void Buzzer_BeepShort(void)
-{
-    buzzer_active = 1U;
-    buzzer_tick = HAL_GetTick();
-    buzzer_duration = BEEP_SHORT_MS;
-    Buzzer_Set(1);
-}
-
-static void Buzzer_BeepLong(void)
-{
-    buzzer_active = 1U;
-    buzzer_tick = HAL_GetTick();
-    buzzer_duration = BEEP_LONG_MS;
-    Buzzer_Set(1);
-}
-
-static void Buzzer_Task(void)
-{
-    uint32_t now = HAL_GetTick();
-
-    // The forced buzzer block during LASER_PRIMING has been removed
-    // to ensure the charging phase stays completely silent!
-
-    if (buzzer_active)
-    {
-        if ((now - buzzer_tick) < buzzer_duration)
-        {
-            Buzzer_Set(1);
-        }
-        else
-        {
-            buzzer_active = 0U;
-            buzzer_duration = 0U;
-            Buzzer_Set(0);
-        }
-    }
-    else
-    {
-        Buzzer_Set(0);
     }
 }
 
@@ -959,6 +867,7 @@ static void LCD_DrawCarSelect(void)
     char line[32];
 
     LCD_Clear(0, 0, 240, 320, UI_BG);
+
     LCD_Clear(0, 0, 240, 6, UI_HEAD);
     LCD_TEXT(10, 10, "SELECT CAR");
     LCD_TEXT(10, 28, "K1:NEXT K2:START");
@@ -1039,7 +948,6 @@ static void LCD_DrawGameLayout(void)
     LCD_TEXT(10, 130, "Laser:");
     LCD_TEXT(10, 150, "Motion:");
     LCD_TEXT(10, 170, "ESP:");
-    LCD_TEXT(10, 190, "Touch:");
 
     LCD_Clear(0, 215, 240, 105, UI_BOTTOM);
     LCD_TEXT(10, 225, "Car:");
@@ -1081,8 +989,13 @@ static void LCD_UpdateGameFast(uint32_t x_raw, uint32_t y_raw)
             speed = 0;
         }
 
-        speed = car_apply_speed_cap(dir_str[0], speed);
-        snprintf(spd_str, sizeof(spd_str), "%3u%%", speed);
+        speed = car_apply_speed_cap(
+            (dir_str[0] == 'F') ? 'F' :
+            (dir_str[0] == 'L') ? 'L' :
+            (dir_str[0] == 'R') ? 'R' : 'S',
+            speed
+        );
+        snprintf(spd_str, sizeof(spd_str), "%3u", speed);
     }
 
     LCD_ClearTextField(60, 10, 20, UI_BG);
@@ -1107,15 +1020,9 @@ static void LCD_UpdateGameSlow(uint8_t fire_pressed)
     char laser_disp[32];
     char motion_disp[24];
     char esp_disp[8];
-    char touch_str[16];
 
     if (fire_pressed) strcpy(btn_str, "PRESSED");
     else              strcpy(btn_str, "RELEASE");
-
-    // Use the latched display flag instead of the raw pin state
-    // so that fast taps are guaranteed to show up on the screen!
-    if (touch_display_flag) strcpy(touch_str, "DETECTED");
-    else                    strcpy(touch_str, "NONE");
 
     snprintf(laser_disp, sizeof(laser_disp), "%s", laser_line);
     snprintf(motion_disp, sizeof(motion_disp), "%s", motion_line);
@@ -1132,9 +1039,6 @@ static void LCD_UpdateGameSlow(uint8_t fire_pressed)
 
     LCD_ClearTextField(50, 170, 8, UI_BG);
     LCD_TEXT(50, 170, esp_disp);
-
-    LCD_ClearTextField(70, 190, 10, UI_BG);
-    LCD_TEXT(70, 190, touch_str);
 
     LCD_ClearTextField(50, 225, 8, UI_BOTTOM);
     LCD_TEXT(50, 225, (char *)CAR_Code(selected_car));
@@ -1299,7 +1203,6 @@ int main(void)
     HAL_ADCEx_Calibration_Start(&hadc2);
 
     HAL_GPIO_WritePin(LASER_PORT, LASER_PIN, GPIO_PIN_RESET);
-    Buzzer_Set(0);
     RGB_Set(1, 1, 1);
     SEG_AllOff();
     SEG_ShowPair(0, 0, 0);
@@ -1310,70 +1213,34 @@ int main(void)
 
     while (1)
     {
-        uint32_t now = HAL_GetTick();
-        uint32_t x_raw = read_adc1();
-        uint32_t y_raw = read_adc2();
-        GPIO_PinState k1_now = HAL_GPIO_ReadPin(K1_PORT, K1_PIN);
-        GPIO_PinState k2_now = HAL_GPIO_ReadPin(K2_PORT, K2_PIN);
-        GPIO_PinState jsw_now = HAL_GPIO_ReadPin(JOY_SW_PORT, JOY_SW_PIN);
+        uint32_t      now      = HAL_GetTick();
+        uint32_t      x_raw    = read_adc1();
+        uint32_t      y_raw    = read_adc2();
+        GPIO_PinState k1_now   = HAL_GPIO_ReadPin(K1_PORT, K1_PIN);
+        GPIO_PinState k2_now   = HAL_GPIO_ReadPin(K2_PORT, K2_PIN);
+        GPIO_PinState jsw_now  = HAL_GPIO_ReadPin(JOY_SW_PORT, JOY_SW_PIN);
         GPIO_PinState btn1_now = HAL_GPIO_ReadPin(BTN1_PORT, BTN1_PIN);
         GPIO_PinState btn2_now = HAL_GPIO_ReadPin(BTN2_PORT, BTN2_PIN);
-
-        // Read the capacitive touch key (Active LOW)
-        GPIO_PinState touch_now = HAL_GPIO_ReadPin(CAP_TOUCH_PORT, CAP_TOUCH_PIN);
-
-        // --- Stretch the touch signal for the LCD ---
-        // If a touch is caught, set the flag and record the time.
-        // The LCD text will remain DETECTED for 500ms so it doesn't blink too fast!
-        if (touch_now == GPIO_PIN_RESET)
-        {
-            touch_display_flag = 1U;
-            touch_display_tick = now;
-        }
-        else if ((now - touch_display_tick) >= 500U)
-        {
-            // Only turn the flag back off if 500ms has passed since the last touch
-            touch_display_flag = 0U;
-        }
-
-        uint8_t k1_click = 0U;
-        uint8_t k2_click = 0U;
-        uint8_t fire_pressed = 0U;
+        uint8_t       k1_click = 0U;
+        uint8_t       k2_click = 0U;
+        uint8_t       fire_pressed = 0U;
 
         (void)btn1_now;
         (void)btn2_now;
 
-        // --- Touch Key Reset Logic ---
-        if ((last_touch_state == GPIO_PIN_SET) && (touch_now == GPIO_PIN_RESET))
+        if ((last_k1_state == GPIO_PIN_RESET) && (k1_now == GPIO_PIN_SET))
         {
-            // If touched during cooldown, instantly reset!
-            if (laser_state == LASER_COOLDOWN)
-            {
-                laser_state = LASER_IDLE;
-                strcpy(laser_line, "READY");
-                fire_cmd_priority = 0U;
-                SEG_AllOff();             // Turn off the segment countdown
-                SEG_ShowPair(0, 0, 0);    // Reset it to 0
-                seg_mode = SEG_IDLE;      // Set the 7-seg logic back to idle
-            }
-        }
-        last_touch_state = touch_now;
-
-        if ((k1_now == GPIO_PIN_SET) &&
-            (last_k1_state == GPIO_PIN_RESET) &&
-            ((now - last_k1_event_tick) >= BTN_DEBOUNCE_MS))
-        {
-            k1_click = 1U;
-            last_k1_event_tick = now;
+            HAL_Delay(20);
+            if (HAL_GPIO_ReadPin(K1_PORT, K1_PIN) == GPIO_PIN_SET)
+                k1_click = 1U;
         }
         last_k1_state = k1_now;
 
-        if ((k2_now == GPIO_PIN_SET) &&
-            (last_k2_state == GPIO_PIN_RESET) &&
-            ((now - last_k2_event_tick) >= BTN_DEBOUNCE_MS))
+        if ((last_k2_state == GPIO_PIN_RESET) && (k2_now == GPIO_PIN_SET))
         {
-            k2_click = 1U;
-            last_k2_event_tick = now;
+            HAL_Delay(20);
+            if (HAL_GPIO_ReadPin(K2_PORT, K2_PIN) == GPIO_PIN_SET)
+                k2_click = 1U;
         }
         last_k2_state = k2_now;
 
@@ -1396,10 +1263,9 @@ int main(void)
                 lcd_slow_tick = 0U;
                 current_dir_cmd = 'S';
                 last_direction_change_tick = 0U;
-                turn_delay_active = 0U;
-                turn_target_cmd = 'S';
                 last_fire_input_state = car_uses_k2_fire() ? GPIO_PIN_RESET : GPIO_PIN_SET;
             }
+
             last_drawn_state = app_state;
         }
 
@@ -1409,11 +1275,9 @@ int main(void)
             laser_state = LASER_IDLE;
             fire_cmd_priority = 0U;
             strcpy(laser_line, "READY");
-            strcpy(motion_line, "STOP 0%");
+            strcpy(motion_line, "STOP  0%");
             Motor_SendCmd('S', 0);
             RGB_Set(1, 1, 1);
-            turn_delay_active = 0U;
-            turn_target_cmd = 'S';
 
             if (selected_mode != last_drawn_mode)
             {
@@ -1423,18 +1287,14 @@ int main(void)
 
             if (k1_click)
             {
-                Buzzer_BeepShort();
                 selected_mode = (game_mode_t)(((uint8_t)selected_mode + 1U) % 3U);
             }
 
             if (k2_click)
             {
-                Buzzer_BeepLong();
                 selected_car = CAR_V0;
                 app_state = APP_CAR_SELECT;
             }
-
-            Buzzer_Task();
         }
         else if (app_state == APP_CAR_SELECT)
         {
@@ -1442,11 +1302,9 @@ int main(void)
             laser_state = LASER_IDLE;
             fire_cmd_priority = 0U;
             strcpy(laser_line, "READY");
-            strcpy(motion_line, "STOP 0%");
+            strcpy(motion_line, "STOP  0%");
             Motor_SendCmd('S', 0);
             RGB_Set(1, 1, 1);
-            turn_delay_active = 0U;
-            turn_target_cmd = 'S';
 
             if (selected_car != last_drawn_car)
             {
@@ -1456,17 +1314,13 @@ int main(void)
 
             if (k1_click)
             {
-                Buzzer_BeepShort();
                 selected_car = (car_type_t)(((uint8_t)selected_car + 1U) % 7U);
             }
 
             if (k2_click)
             {
-                Buzzer_BeepLong();
                 app_state = APP_GAME;
             }
-
-            Buzzer_Task();
         }
         else
         {
@@ -1502,7 +1356,7 @@ int main(void)
                         HAL_Delay(20);
                         if (HAL_GPIO_ReadPin(JOY_SW_PORT, JOY_SW_PIN) == GPIO_PIN_RESET)
                         {
-                            last_jsw_press_tick = HAL_GetTick();
+                            last_jsw_press_tick  = HAL_GetTick();
                             jsw_has_been_pressed = 1U;
                             laser_on_press();
                         }
@@ -1523,13 +1377,12 @@ int main(void)
 
                 if (HAL_GetTick() - ds18b20_last_tick >= 2000U)
                 {
-                    ds18b20_raw = DS18B20_ReadRaw();
+                    ds18b20_raw       = DS18B20_ReadRaw();
                     ds18b20_last_tick = HAL_GetTick();
                 }
 
                 laser_update();
                 RGB_Update_From_State();
-                Buzzer_Task();
                 SEG_Task();
                 Drive_Task(x_raw, y_raw);
 
@@ -1554,7 +1407,6 @@ int main(void)
                 snprintf(motion_line, sizeof(motion_line), "%s WAIT", MODE_Name(selected_mode));
                 Motor_SendCmd('S', 0);
                 RGB_Set(1, 1, 0);
-                Buzzer_Task();
                 SEG_AllOff();
 
                 if ((now - lcd_fast_tick) >= LCD_FAST_UPDATE_MS)
@@ -1685,7 +1537,6 @@ static void MX_GPIO_Init(void)
     HAL_GPIO_WritePin(RGB_R_PORT, RGB_R_PIN, GPIO_PIN_SET);
     HAL_GPIO_WritePin(RGB_G_PORT, RGB_G_PIN, GPIO_PIN_SET);
     HAL_GPIO_WritePin(RGB_B_PORT, RGB_B_PIN, GPIO_PIN_SET);
-    HAL_GPIO_WritePin(BEEP_PORT, BEEP_PIN, GPIO_PIN_RESET);
 
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7, GPIO_PIN_SET);
     HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6 | GPIO_PIN_7 | GPIO_PIN_12 | GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15, GPIO_PIN_SET);
@@ -1710,25 +1561,10 @@ static void MX_GPIO_Init(void)
     g.Speed = GPIO_SPEED_FREQ_LOW;
     HAL_GPIO_Init(GPIOB, &g);
 
-    // Initializing PA1 (Capacitive Touch) together with other GPIOA outputs/inputs.
-    g.Pin = GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7 | BEEP_PIN;
-    g.Mode = GPIO_MODE_OUTPUT_PP;
-    g.Pull = GPIO_NOPULL;
-    g.Speed = GPIO_SPEED_FREQ_LOW;
+    g.Pin = GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7;
     HAL_GPIO_Init(GPIOA, &g);
 
-    // Explicitly initializing PA1 as an Input for the Touch Key
-    g.Pin = CAP_TOUCH_PIN;
-    g.Mode = GPIO_MODE_INPUT;
-    g.Pull = GPIO_NOPULL;
-    HAL_GPIO_Init(CAP_TOUCH_PORT, &g);
-
-    // *** 7-SEGMENT FIX ***
-    // Explicitly set the mode BACK to output for the segment pins on GPIOC
-    g.Pin = GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7;
-    g.Mode = GPIO_MODE_OUTPUT_PP;
-    g.Pull = GPIO_NOPULL;
-    g.Speed = GPIO_SPEED_FREQ_LOW;
+    g.Pin = GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7 | GPIO_PIN_13;
     HAL_GPIO_Init(GPIOC, &g);
 
     g.Pin  = JOY_SW_PIN;
@@ -1747,12 +1583,9 @@ static void MX_GPIO_Init(void)
     HAL_GPIO_Init(K1_PORT, &g);
 
     g.Pin  = K2_PIN;
-    g.Mode = GPIO_MODE_INPUT;
-    g.Pull = GPIO_NOPULL;
     HAL_GPIO_Init(K2_PORT, &g);
 
     g.Pin  = DS18B20_PIN;
-    g.Mode = GPIO_MODE_INPUT;
     g.Pull = GPIO_NOPULL;
     HAL_GPIO_Init(DS18B20_PORT, &g);
 }
