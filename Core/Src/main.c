@@ -22,6 +22,7 @@
 #include "peripherals.h"
 #include "game_logic.h"
 #include "ui.h"
+#include "mode_2.h"
 /* USER CODE END Includes */
 
 /* USER CODE BEGIN PTD */
@@ -140,7 +141,7 @@ int main(void)
             curr_py = 319 - curr_py; // Invert the Y-axis to match the screen orientation
 
             // Only draw the red touch-dot during the active GAME to keep menus clean
-            if (app_state == APP_GAME) {
+            if (app_state == APP_GAME && selected_mode == GAME_MODE_1) {
                 LCD_Clear(curr_px > 2 ? curr_px - 2 : 0, curr_py > 2 ? curr_py - 2 : 0, 5, 5, RED);
             }
 
@@ -223,7 +224,9 @@ int main(void)
             }
             else if (app_state == APP_GAME)
             {
-                LCD_DrawGameLayout();
+                if (selected_mode == GAME_MODE_2) Mode2_Init();
+                else LCD_DrawGameLayout();
+                
                 lcd_fast_tick = 0U;
                 lcd_slow_tick = 0U;
                 current_dir_cmd = 'S';
@@ -479,27 +482,8 @@ int main(void)
             }
             else
             {
-                HAL_GPIO_WritePin(LASER_PORT, LASER_PIN, GPIO_PIN_RESET);
-                laser_state = LASER_IDLE;
-                fire_cmd_priority = 0U;
-                strcpy(laser_line, "MODE TODO");
-                snprintf(motion_line, sizeof(motion_line), "%s WAIT", MODE_Name(selected_mode));
-                Motor_SendCmd('S', 0);
-                RGB_Set(1, 1, 0);
-                Buzzer_Task();
-                SEG_AllOff();
-
-                if ((now - lcd_fast_tick) >= LCD_FAST_UPDATE_MS)
-                {
-                    lcd_fast_tick = now;
-                    LCD_UpdateGameFast(x_raw, y_raw);
-                }
-
-                if ((now - lcd_slow_tick) >= LCD_SLOW_UPDATE_MS)
-                {
-                    lcd_slow_tick = now;
-                    LCD_UpdateGameSlow(0U);
-                }
+                uint8_t fire_active = (car_uses_k2_fire()) ? (k2_now == GPIO_PIN_SET) : (jsw_now == GPIO_PIN_RESET);
+                Game_Router_Task(x_raw, y_raw, k1_click, k2_click, fire_active);
             }
         }
 
