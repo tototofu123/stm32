@@ -224,12 +224,12 @@ void LCD_UpdateMode2InputSelect(void) {
 void LCD_DrawMode2CommandHistory(char cmd, uint8_t slot, uint8_t is_new)
 {
     uint16_t x = 5 + (slot * 23);
-    uint16_t y = 292;
+    uint16_t y = 50; // Above boundary line
     
     if (is_new) {
-        LCD_SetColors(GREEN, UI_BOTTOM);
+        LCD_SetColors(GREEN, UI_BG);
     } else {
-        LCD_SetColors(BLUE, UI_BOTTOM);
+        LCD_SetColors(BLUE, UI_BG);
     }
     
     LCD_DrawChar(x, y, cmd);
@@ -245,16 +245,15 @@ void LCD_DrawMode2Canvas(void)
     
     LCD_SetColors(BLUE, UI_BG);
     if (m2_input_method == M2_INPUT_TOUCH) {
-        LCD_TEXT(10, 30, "Click on LCD to start");
-        LCD_TEXT(10, 48, "the route drawing");
+        LCD_TEXT(10, 25, "Click LCD to Draw");
     } else {
-        LCD_TEXT(10, 30, "Use Joy to Draw");
+        LCD_TEXT(10, 25, "Use Joy to Draw");
     }
     
-    LCD_TEXT(10, 65, "K1:Clear K2:Confirm");
+    LCD_TEXT(140, 25, "K1:RST K2:OK");
     
     // Draw boundary line
-    LCD_DrawLine(0, 85, 240, 85, MY_BLACK);
+    LCD_DrawLine(0, 75, 240, 75, MY_BLACK);
 }
 
 void LCD_DrawMode2ResetConfirm(void)
