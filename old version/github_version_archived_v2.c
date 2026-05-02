@@ -3,10 +3,8 @@
   ******************************************************************************
   * @file           : main.c
   * @brief          : Joystick + laser + RGB LED + LCD + UART motor commands
-  *                   Added boot menu flow:
-  *                   MODE SELECT -> CAR SELECT -> GAME
-  *                   Mode 1 = current gameplay
-  *                   Mode 2/3 = placeholder
+  *                   Motor control via ESP-01S over USART3
+  *                   LCD updated to clean text-only layout + PA2/PA3 buttons
   ******************************************************************************
   */
 /* USER CODE END Header */
@@ -49,25 +47,6 @@ typedef enum {
     SEG_JSW_CD,
     SEG_ZERO_HOLD
 } seg_mode_t;
-
-typedef enum {
-    APP_MODE_SELECT = 0,
-    APP_CAR_SELECT,
-    APP_GAME
-} app_state_t;
-
-typedef enum {
-    GAME_MODE_1 = 0,
-    GAME_MODE_2,
-    GAME_MODE_3
-} game_mode_t;
-
-typedef enum {
-    CAR_V0 = 0,
-    CAR_V1,
-    CAR_V2,
-    CAR_V3
-} car_type_t;
 /* USER CODE END PTD */
 
 /* USER CODE BEGIN PD */
@@ -116,11 +95,6 @@ typedef enum {
 #define LCD_SLOW_UPDATE_MS  350U
 
 #define UI_BG               WHITE
-#define UI_HEAD             CYAN
-#define UI_BOX_SEL          GREEN
-#define UI_BOX_NSEL         YELLOW
-#define UI_BOTTOM           MAGENTA
-#define UI_PLACEHOLDER      RED
 
 #define LSEG_A_PIN          GPIO_PIN_5
 #define LSEG_A_PORT         GPIOA
@@ -155,7 +129,7 @@ typedef enum {
 #define RSEG_G_PORT         GPIOB
 /* USER CODE END PD */
 
-#define LCD_TEXT(x, y, s)   LCD_DrawString((x), (y), (unsigned char *)(s))
+#define LCD_TEXT(x, y, s)   LCD_DrawString((x), (y), (s))
 
 ADC_HandleTypeDef  hadc1;
 ADC_HandleTypeDef  hadc2;
@@ -167,19 +141,6 @@ SRAM_HandleTypeDef hsram1;
 GPIO_PinState last_k1_state  = GPIO_PIN_RESET;
 GPIO_PinState last_k2_state  = GPIO_PIN_RESET;
 GPIO_PinState last_jsw_state = GPIO_PIN_SET;
-
-app_state_t app_state = APP_MODE_SELECT;
-app_state_t last_drawn_state = (app_state_t)255;
-
-game_mode_t selected_mode = GAME_MODE_1;
-game_mode_t last_drawn_mode = (game_mode_t)255;
-
-car_type_t selected_car = CAR_V0;
-car_type_t last_drawn_car = (car_type_t)255;
-
-GPIO_PinState last_fire_input_state = GPIO_PIN_SET;
-char current_dir_cmd = 'S';
-uint32_t last_direction_change_tick = 0U;
 
 uint32_t last_jsw_press_tick  = 0;
 uint8_t  jsw_has_been_pressed = 0;
@@ -199,7 +160,7 @@ volatile uint16_t esp_rx_index = 0;
 volatile uint8_t  esp_rx_done  = 0;
 
 char    esp_cmd_rx[8] = "S000";
-uint8_t fire_cmd_priority = 0U;
+uint8_t fire_cmd_priority = 0;
 
 wifi_state_t wifi_state      = WIFI_STATE_IDLE;
 uint32_t     wifi_state_tick = 0;
@@ -239,24 +200,10 @@ static void     laser_on_press(void);
 static void     laser_on_release(void);
 static void     laser_update(void);
 static void     RGB_Update_From_State(void);
-static void     LCD_DrawModeSelect(void);
-static void     LCD_DrawCarSelect(void);
-static void     LCD_DrawGameLayout(void);
-static void     LCD_UpdateModeSelection(void);
-static void     LCD_UpdateCarSelection(void);
-static void     LCD_UpdateGameFast(uint32_t x_raw, uint32_t y_raw);
-static void     LCD_UpdateGameSlow(uint8_t fire_pressed);
-static void     LCD_ClearTextField(uint16_t x, uint16_t y, uint16_t chars, uint16_t bg);
-static const char *MODE_Name(game_mode_t mode);
-static const char *CAR_Code(car_type_t car);
-static const char *CAR_Label(car_type_t car);
-static uint32_t car_fire_ms(void);
-static uint32_t car_cooldown_ms(void);
-static uint8_t  car_speed_cap(uint8_t speed);
-static uint8_t  car_allows_move_while_firing(void);
-static uint8_t  car_uses_k2_fire(void);
-static uint8_t  car_auto_fire_enabled(void);
-static uint8_t  car_has_turn_delay(void);
+static void     LCD_DrawStaticLayout(void);
+static void     LCD_UpdateFast(uint32_t x_raw, uint32_t y_raw);
+static void     LCD_UpdateSlow(GPIO_PinState jsw_now, int32_t temp_raw, GPIO_PinState k1_now, GPIO_PinState k2_now);
+static void     LCD_ClearTextField(uint16_t usC, uint16_t usP, uint16_t chars);
 static void     ds_pin_out(void);
 static void     ds_pin_in(void);
 static void     ds_delay_us(uint16_t us);
@@ -270,93 +217,15 @@ static void     SEG_ShowLeft(uint8_t d, uint8_t dp);
 static void     SEG_ShowRight(uint8_t d);
 static void     SEG_ShowPair(uint8_t left, uint8_t right, uint8_t dp);
 static void     SEG_ShowTenths(int t);
-static void     SEG_StartCooldownCountdown(uint32_t cooldown_ms);
+static void     SEG_StartK1Countdown(void);
+static void     SEG_StartK2Show88(void);
+static void     SEG_StartCooldownCountdown(void);
 static void     SEG_Task(void);
 void sendAT(const char *cmd);
 void readResponse(void);
 void WifiSetUp(void);
 
 /* USER CODE BEGIN 0 */
-static const char *MODE_Name(game_mode_t mode)
-{
-    switch (mode)
-    {
-    case GAME_MODE_1: return "MODE 1";
-    case GAME_MODE_2: return "MODE 2";
-    case GAME_MODE_3: return "MODE 3";
-    default:          return "MODE 1";
-    }
-}
-
-static const char *CAR_Code(car_type_t car)
-{
-    switch (car)
-    {
-    case CAR_V0: return "V0";
-    case CAR_V1: return "V1";
-    case CAR_V2: return "V2";
-    case CAR_V3: return "V3";
-    default:     return "V0";
-    }
-}
-
-static const char *CAR_Label(car_type_t car)
-{
-    switch (car)
-    {
-    case CAR_V0: return "STANDARD";
-    case CAR_V1: return "AUTO FIRE";
-    case CAR_V2: return "RAPID SHOT";
-    case CAR_V3: return "HEAVY SHOT";
-    default:     return "STANDARD";
-    }
-}
-
-static uint32_t car_fire_ms(void)
-{
-    switch (selected_car)
-    {
-    case CAR_V2: return 500U;
-    default:     return LASER_FIRE_MS;
-    }
-}
-
-static uint32_t car_cooldown_ms(void)
-{
-    switch (selected_car)
-    {
-    case CAR_V2: return LASER_COOLDOWN_MS / 2U;
-    case CAR_V3: return 6000U;
-    default:     return LASER_COOLDOWN_MS;
-    }
-}
-
-static uint8_t car_speed_cap(uint8_t speed)
-{
-    if ((selected_car == CAR_V1) && (speed > 70U)) return 70U;
-    return speed;
-}
-
-static uint8_t car_allows_move_while_firing(void)
-{
-    return (selected_car == CAR_V3) ? 1U : 0U;
-}
-
-static uint8_t car_uses_k2_fire(void)
-{
-    return (selected_car == CAR_V3) ? 1U : 0U;
-}
-
-static uint8_t car_auto_fire_enabled(void)
-{
-    return (selected_car == CAR_V1) ? 1U : 0U;
-}
-
-static uint8_t car_has_turn_delay(void)
-{
-    return (selected_car == CAR_V2) ? 1U : 0U;
-}
-
 static uint32_t read_adc1(void)
 {
     HAL_ADC_Start(&hadc1);
@@ -502,12 +371,25 @@ static void SEG_ShowTenths(int t)
     SEG_ShowPair((uint8_t)(t / 10), (uint8_t)(t % 10), 1);
 }
 
-static void SEG_StartCooldownCountdown(uint32_t cooldown_ms)
+static void SEG_StartK1Countdown(void)
+{
+    seg_mode = SEG_K1_COUNT;
+    seg_tenths = 99;
+    seg_tick = HAL_GetTick();
+    SEG_ShowTenths(seg_tenths);
+}
+
+static void SEG_StartK2Show88(void)
+{
+    seg_mode = SEG_K2_SHOW88;
+    seg_tick = HAL_GetTick();
+    SEG_ShowPair(8, 8, 0);
+}
+
+static void SEG_StartCooldownCountdown(void)
 {
     seg_mode = SEG_JSW_CD;
-    seg_tenths = (int)(cooldown_ms / 100U);
-    if (seg_tenths < 0) seg_tenths = 0;
-    if (seg_tenths > 99) seg_tenths = 99;
+    seg_tenths = 30;
     seg_tick = HAL_GetTick();
     SEG_ShowTenths(seg_tenths);
 }
@@ -518,6 +400,7 @@ static void SEG_Task(void)
 
     switch (seg_mode)
     {
+    case SEG_K1_COUNT:
     case SEG_JSW_CD:
         while ((now - seg_tick) >= 100U)
         {
@@ -534,6 +417,14 @@ static void SEG_Task(void)
                 seg_tick = now;
                 break;
             }
+        }
+        break;
+
+    case SEG_K2_SHOW88:
+        if ((now - seg_tick) >= 1000U)
+        {
+            SEG_ShowPair(0, 0, 0);
+            seg_mode = SEG_IDLE;
         }
         break;
 
@@ -554,7 +445,7 @@ static void SEG_Task(void)
 static void Motor_SendCmd(char cmd, uint8_t speed)
 {
     uint32_t now = HAL_GetTick();
-    char tx[8];
+    char tx[12];
 
     if (cmd == last_motor_cmd &&
         speed == last_motor_speed &&
@@ -581,7 +472,7 @@ static void Fire_SendCmd(uint8_t fire_on)
 {
     char tx[8];
 
-    fire_cmd_priority = fire_on ? 1U : 0U;
+    fire_cmd_priority = 1U;
     snprintf(tx, sizeof(tx), "T%03u", fire_on ? 1U : 0U);
     snprintf(esp_cmd_rx, sizeof(esp_cmd_rx), "%s", tx);
     sendAT(tx);
@@ -604,10 +495,8 @@ static void laser_on_release(void)
 
 static void laser_update(void)
 {
-    uint32_t now         = HAL_GetTick();
-    uint32_t elapsed     = now - laser_tick;
-    uint32_t fire_ms     = car_fire_ms();
-    uint32_t cooldown_ms = car_cooldown_ms();
+    uint32_t now     = HAL_GetTick();
+    uint32_t elapsed = now - laser_tick;
 
     switch (laser_state)
     {
@@ -637,24 +526,24 @@ static void laser_update(void)
         break;
 
     case LASER_FIRING:
-        if (elapsed >= fire_ms)
+        if (elapsed >= LASER_FIRE_MS)
         {
             HAL_GPIO_WritePin(LASER_PORT, LASER_PIN, GPIO_PIN_RESET);
             Fire_SendCmd(0);
             laser_state = LASER_COOLDOWN;
             laser_tick  = now;
             strcpy(laser_line, "COOLDOWN");
-            SEG_StartCooldownCountdown(cooldown_ms);
+            SEG_StartCooldownCountdown();
         }
         else
         {
-            uint32_t rem = fire_ms - elapsed;
+            uint32_t rem = LASER_FIRE_MS - elapsed;
             snprintf(laser_line, sizeof(laser_line), "FIRE:%lums", rem);
         }
         break;
 
     case LASER_COOLDOWN:
-        if (elapsed >= cooldown_ms)
+        if (elapsed >= LASER_COOLDOWN_MS)
         {
             laser_state = LASER_IDLE;
             strcpy(laser_line, "READY");
@@ -662,7 +551,7 @@ static void laser_update(void)
         }
         else
         {
-            uint32_t rem = cooldown_ms - elapsed;
+            uint32_t rem = LASER_COOLDOWN_MS - elapsed;
             snprintf(laser_line, sizeof(laser_line), "CD:%lu.%lus",
                      rem / 1000U, (rem % 1000U) / 100U);
         }
@@ -672,16 +561,6 @@ static void laser_update(void)
         laser_state = LASER_IDLE;
         fire_cmd_priority = 0U;
         break;
-    }
-
-    if ((app_state == APP_GAME) &&
-        (selected_mode == GAME_MODE_1) &&
-        car_auto_fire_enabled() &&
-        (laser_state == LASER_IDLE))
-    {
-        laser_state = LASER_PRIMING;
-        laser_tick  = now;
-        strcpy(laser_line, "AUTO PRIME");
     }
 }
 
@@ -702,36 +581,23 @@ static void Drive_Task(uint32_t x_raw, uint32_t y_raw)
 {
     char cmd = 'S';
     uint8_t speed = 0;
-    uint32_t now = HAL_GetTick();
-
-    if (!car_allows_move_while_firing() &&
-        ((laser_state == LASER_PRIMING) || (laser_state == LASER_FIRING)))
-    {
-        snprintf(motion_line, sizeof(motion_line), "LOCK  %3u%%", 0U);
-        Motor_SendCmd('S', 0);
-        current_dir_cmd = 'S';
-        return;
-    }
 
     if (y_raw < Y_FWD_THRESH_ADC)
     {
         cmd = 'F';
         speed = map_range_percent(y_raw, Y_FWD_THRESH_ADC, ADC_MIN);
-        speed = car_speed_cap(speed);
         snprintf(motion_line, sizeof(motion_line), "FRONT %3u%%", speed);
     }
     else if (x_raw < X_LEFT_THRESH_ADC)
     {
         cmd = 'L';
         speed = map_range_percent(x_raw, X_LEFT_THRESH_ADC, ADC_MIN);
-        speed = car_speed_cap(speed);
         snprintf(motion_line, sizeof(motion_line), "LEFT  %3u%%", speed);
     }
     else if (x_raw > X_RIGHT_THRESH_ADC)
     {
         cmd = 'R';
         speed = map_range_percent(x_raw, X_RIGHT_THRESH_ADC, ADC_MAX);
-        speed = car_speed_cap(speed);
         snprintf(motion_line, sizeof(motion_line), "RIGHT %3u%%", speed);
     }
     else
@@ -741,241 +607,42 @@ static void Drive_Task(uint32_t x_raw, uint32_t y_raw)
         snprintf(motion_line, sizeof(motion_line), "STOP  %3u%%", speed);
     }
 
-    if (car_has_turn_delay() &&
-        (current_dir_cmd != 'S') &&
-        (cmd != 'S') &&
-        (cmd != current_dir_cmd))
-    {
-        if ((now - last_direction_change_tick) < 500U)
-        {
-            snprintf(motion_line, sizeof(motion_line), "DELAY %3u%%", 0U);
-            Motor_SendCmd('S', 0);
-            return;
-        }
-        last_direction_change_tick = now;
-    }
-
-    if (cmd != current_dir_cmd)
-    {
-        current_dir_cmd = cmd;
-    }
-
     Motor_SendCmd(cmd, speed);
 }
 
-static void LCD_ClearTextField(uint16_t x, uint16_t y, uint16_t chars, uint16_t bg)
+static void LCD_ClearTextField(uint16_t usC, uint16_t usP, uint16_t chars)
 {
-    LCD_Clear(x, y, chars * WIDTH_EN_CHAR, HEIGHT_EN_CHAR, bg);
+    LCD_Clear(usC, usP, chars * WIDTH_EN_CHAR, HEIGHT_EN_CHAR, UI_BG);
 }
 
-static void LCD_DrawModeSelect(void)
+static void LCD_DrawStaticLayout(void)
 {
     LCD_Clear(0, 0, 240, 320, UI_BG);
-
-    LCD_Clear(0, 0, 240, 6, UI_HEAD);
-    LCD_TEXT(10, 12, "SELECT MODE");
-    LCD_TEXT(10, 32, "K1:NEXT   K2:CONFIRM");
-
-    LCD_Clear(20, 70, 200, 40, (selected_mode == GAME_MODE_1) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(80, 82, "MODE 1");
-
-    LCD_Clear(20, 125, 200, 40, (selected_mode == GAME_MODE_2) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(80, 137, "MODE 2");
-
-    LCD_Clear(20, 180, 200, 40, (selected_mode == GAME_MODE_3) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(80, 192, "MODE 3");
-
-    LCD_Clear(0, 250, 240, 70, UI_BOTTOM);
-    LCD_TEXT(10, 260, "MODE 1 = PLAY NOW");
-    LCD_TEXT(10, 280, "MODE 2/3 = PLACEHOLDER");
-}
-
-static void LCD_UpdateModeSelection(void)
-{
-    LCD_Clear(20, 70, 200, 40, (selected_mode == GAME_MODE_1) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(80, 82, "MODE 1");
-
-    LCD_Clear(20, 125, 200, 40, (selected_mode == GAME_MODE_2) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(80, 137, "MODE 2");
-
-    LCD_Clear(20, 180, 200, 40, (selected_mode == GAME_MODE_3) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(80, 192, "MODE 3");
-}
-
-static void LCD_DrawCarSelect(void)
-{
-    char line[32];
-
-    LCD_Clear(0, 0, 240, 320, UI_BG);
-
-    LCD_Clear(0, 0, 240, 6, UI_HEAD);
-    LCD_TEXT(10, 12, "SELECT CAR");
-    LCD_TEXT(10, 32, "K1:NEXT   K2:START");
-
-    snprintf(line, sizeof(line), "MODE:%s", MODE_Name(selected_mode));
-    LCD_TEXT(10, 52, line);
-
-    LCD_Clear(20, 80, 200, 34, (selected_car == CAR_V0) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(30, 89, "V0  STANDARD");
-
-    LCD_Clear(20, 120, 200, 34, (selected_car == CAR_V1) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(30, 129, "V1  AUTO FIRE");
-
-    LCD_Clear(20, 160, 200, 34, (selected_car == CAR_V2) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(30, 169, "V2  RAPID SHOT");
-
-    LCD_Clear(20, 200, 200, 34, (selected_car == CAR_V3) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(30, 209, "V3  HEAVY SHOT");
-
-    LCD_Clear(0, 250, 240, 70, UI_BOTTOM);
-    LCD_TEXT(10, 260, "CAR:");
-    LCD_TEXT(60, 260, (char *)CAR_Code(selected_car));
-    LCD_TEXT(10, 280, "TYPE:");
-    LCD_TEXT(60, 280, (char *)CAR_Label(selected_car));
-}
-
-static void LCD_UpdateCarSelection(void)
-{
-    LCD_Clear(20, 80, 200, 34, (selected_car == CAR_V0) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(30, 89, "V0  STANDARD");
-
-    LCD_Clear(20, 120, 200, 34, (selected_car == CAR_V1) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(30, 129, "V1  AUTO FIRE");
-
-    LCD_Clear(20, 160, 200, 34, (selected_car == CAR_V2) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(30, 169, "V2  RAPID SHOT");
-
-    LCD_Clear(20, 200, 200, 34, (selected_car == CAR_V3) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(30, 209, "V3  HEAVY SHOT");
-
-    LCD_ClearTextField(60, 260, 8, UI_BOTTOM);
-    LCD_TEXT(60, 260, (char *)CAR_Code(selected_car));
-
-    LCD_ClearTextField(60, 280, 20, UI_BOTTOM);
-    LCD_TEXT(60, 280, (char *)CAR_Label(selected_car));
-}
-
-static void LCD_DrawGameLayout(void)
-{
-    LCD_Clear(0, 0, 240, 320, UI_BG);
-
-    LCD_Clear(0, 0, 240, 6, UI_HEAD);
 
     LCD_TEXT(10, 10,  "WiFi:");
     LCD_TEXT(10, 30,  "IP:");
-    LCD_TEXT(10, 50,  "Mode:");
-    LCD_TEXT(10, 70,  "Direction:");
-    LCD_TEXT(10, 90,  "Speed:");
-    LCD_TEXT(10, 110, "Button:");
-    LCD_TEXT(10, 130, "Laser:");
-    LCD_TEXT(10, 150, "Motion:");
-    LCD_TEXT(10, 170, "ESP:");
-
-    LCD_Clear(0, 215, 240, 105, UI_BOTTOM);
-    LCD_TEXT(10, 225, "Car:");
-    LCD_TEXT(10, 245, "Car Type:");
-}
-
-static void LCD_UpdateGameFast(uint32_t x_raw, uint32_t y_raw)
-{
-    char dir_str[16];
-    char spd_str[16];
-
-    uint8_t speed = 0;
-
-    if (selected_mode != GAME_MODE_1)
-    {
-        strcpy(dir_str, "PLACEHOLDER");
-        strcpy(spd_str, "---");
-    }
-    else
-    {
-        if (y_raw < Y_FWD_THRESH_ADC)
-        {
-            strcpy(dir_str, "FORWARD");
-            speed = map_range_percent(y_raw, Y_FWD_THRESH_ADC, ADC_MIN);
-        }
-        else if (x_raw < X_LEFT_THRESH_ADC)
-        {
-            strcpy(dir_str, "LEFT");
-            speed = map_range_percent(x_raw, X_LEFT_THRESH_ADC, ADC_MIN);
-        }
-        else if (x_raw > X_RIGHT_THRESH_ADC)
-        {
-            strcpy(dir_str, "RIGHT");
-            speed = map_range_percent(x_raw, X_RIGHT_THRESH_ADC, ADC_MAX);
-        }
-        else
-        {
-            strcpy(dir_str, "STOP");
-            speed = 0;
-        }
-
-        speed = car_speed_cap(speed);
-        snprintf(spd_str, sizeof(spd_str), "%3u%%", speed);
-    }
-
-    LCD_ClearTextField(60, 10, 20, UI_BG);
-    LCD_TEXT(60, 10, wifi_line1);
-
-    LCD_ClearTextField(40, 30, 24, UI_BG);
-    LCD_TEXT(40, 30, wifi_line2);
-
-    LCD_ClearTextField(50, 50, 12, UI_BG);
-    LCD_TEXT(50, 50, (char *)MODE_Name(selected_mode));
-
-    LCD_ClearTextField(90, 70, 14, UI_BG);
-    LCD_TEXT(90, 70, dir_str);
-
-    LCD_ClearTextField(70, 90, 10, UI_BG);
-    LCD_TEXT(70, 90, spd_str);
-}
-
-static void LCD_UpdateGameSlow(uint8_t fire_pressed)
-{
-    char btn_str[16];
-    char laser_disp[32];
-    char motion_disp[24];
-    char esp_disp[8];
-
-    if (fire_pressed) strcpy(btn_str, "PRESSED");
-    else              strcpy(btn_str, "RELEASE");
-
-    snprintf(laser_disp, sizeof(laser_disp), "%s", laser_line);
-    snprintf(motion_disp, sizeof(motion_disp), "%s", motion_line);
-    snprintf(esp_disp, sizeof(esp_disp), "%s", esp_cmd_rx);
-
-    LCD_ClearTextField(70, 110, 12, UI_BG);
-    LCD_TEXT(70, 110, btn_str);
-
-    LCD_ClearTextField(60, 130, 20, UI_BG);
-    LCD_TEXT(60, 130, laser_disp);
-
-    LCD_ClearTextField(70, 150, 20, UI_BG);
-    LCD_TEXT(70, 150, motion_disp);
-
-    LCD_ClearTextField(50, 170, 8, UI_BG);
-    LCD_TEXT(50, 170, esp_disp);
-
-    LCD_ClearTextField(50, 225, 8, UI_BOTTOM);
-    LCD_TEXT(50, 225, (char *)CAR_Code(selected_car));
-
-    LCD_ClearTextField(80, 245, 20, UI_BOTTOM);
-    LCD_TEXT(80, 245, (char *)CAR_Label(selected_car));
+    LCD_TEXT(10, 60,  "Direction:");
+    LCD_TEXT(10, 80,  "Speed:");
+    LCD_TEXT(10, 100, "Button:");
+    LCD_TEXT(10, 120, "Laser:");
+    LCD_TEXT(10, 140, "Motion:");
+    LCD_TEXT(10, 160, "ESP:");
+    LCD_TEXT(10, 190, "K1/K2 -> 7SEG");
+    LCD_TEXT(10, 210, "K1:");
+    LCD_TEXT(10, 230, "K2:");
 }
 
 void sendAT(const char *cmd)
 {
-    HAL_UART_Transmit(&huart3, (uint8_t *)cmd, strlen(cmd), HAL_MAX_DELAY);
-    HAL_UART_Transmit(&huart3, (uint8_t *)"\r\n", 2, HAL_MAX_DELAY);
+    HAL_UART_Transmit(&huart3, (uint8_t*)cmd, strlen(cmd), HAL_MAX_DELAY);
+    HAL_UART_Transmit(&huart3, (uint8_t*)"\r\n", 2, HAL_MAX_DELAY);
     HAL_Delay(20);
 }
 
 void readResponse(void)
 {
     char buffer[128] = {0};
-    HAL_UART_Receive(&huart3, (uint8_t *)buffer, sizeof(buffer) - 1, 1000);
-
+    HAL_UART_Receive(&huart3, (uint8_t*)buffer, sizeof(buffer)-1, 1000);
     if (strstr(buffer, "Hello from ESP01s client!") != NULL)
     {
         snprintf(wifi_line1, sizeof(wifi_line1), "connect");
@@ -1087,6 +754,90 @@ static int32_t DS18B20_ReadRaw(void)
     return (int32_t)raw;
 }
 
+static void LCD_UpdateFast(uint32_t x_raw, uint32_t y_raw)
+{
+    char dir_str[16];
+    char spd_str[16];
+    uint8_t speed = 0;
+
+    if (y_raw < Y_FWD_THRESH_ADC)
+    {
+        strcpy(dir_str, "FORWARD");
+        speed = map_range_percent(y_raw, Y_FWD_THRESH_ADC, ADC_MIN);
+    }
+    else if (x_raw < X_LEFT_THRESH_ADC)
+    {
+        strcpy(dir_str, "LEFT");
+        speed = map_range_percent(x_raw, X_LEFT_THRESH_ADC, ADC_MIN);
+    }
+    else if (x_raw > X_RIGHT_THRESH_ADC)
+    {
+        strcpy(dir_str, "RIGHT");
+        speed = map_range_percent(x_raw, X_RIGHT_THRESH_ADC, ADC_MAX);
+    }
+    else
+    {
+        strcpy(dir_str, "STOP");
+        speed = 0;
+    }
+
+    snprintf(spd_str, sizeof(spd_str), "%3u%%", speed);
+
+    LCD_ClearTextField(60, 10, 20);
+    LCD_TEXT(60, 10, wifi_line1);
+
+    LCD_ClearTextField(40, 30, 24);
+    LCD_TEXT(40, 30, wifi_line2);
+
+    LCD_ClearTextField(90, 60, 12);
+    LCD_TEXT(90, 60, dir_str);
+
+    LCD_ClearTextField(70, 80, 8);
+    LCD_TEXT(70, 80, spd_str);
+}
+
+static void LCD_UpdateSlow(GPIO_PinState jsw_now, int32_t temp_raw, GPIO_PinState k1_now, GPIO_PinState k2_now)
+{
+    char btn_str[16];
+    char laser_disp[32];
+    char motion_disp[24];
+    char esp_disp[8];
+    char k1_str[16];
+    char k2_str[16];
+    (void)temp_raw;
+
+    if (jsw_now == GPIO_PIN_RESET) strcpy(btn_str, "PRESSED");
+    else                           strcpy(btn_str, "RELEASE");
+
+    if (k1_now == GPIO_PIN_SET) strcpy(k1_str, "PRESSED");
+    else                        strcpy(k1_str, "RELEASE");
+
+    if (k2_now == GPIO_PIN_SET) strcpy(k2_str, "PRESSED");
+    else                        strcpy(k2_str, "RELEASE");
+
+    snprintf(laser_disp, sizeof(laser_disp), "%s", laser_line);
+    snprintf(motion_disp, sizeof(motion_disp), "%s", motion_line);
+    snprintf(esp_disp, sizeof(esp_disp), "%s", esp_cmd_rx);
+
+    LCD_ClearTextField(70, 100, 12);
+    LCD_TEXT(70, 100, btn_str);
+
+    LCD_ClearTextField(60, 120, 20);
+    LCD_TEXT(60, 120, laser_disp);
+
+    LCD_ClearTextField(70, 140, 20);
+    LCD_TEXT(70, 140, motion_disp);
+
+    LCD_ClearTextField(50, 160, 8);
+    LCD_TEXT(50, 160, esp_disp);
+
+    LCD_ClearTextField(40, 210, 12);
+    LCD_TEXT(40, 210, k1_str);
+
+    LCD_ClearTextField(40, 230, 12);
+    LCD_TEXT(40, 230, k2_str);
+}
+
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
     if (huart->Instance == USART3)
@@ -1125,8 +876,9 @@ int main(void)
     SEG_ShowPair(0, 0, 0);
 
     LCD_INIT();
+    LCD_DrawStaticLayout();
+
     WifiSetUp();
-    HAL_UART_Receive_IT(&huart3, &esp_rx_byte, 1);
 
     while (1)
     {
@@ -1138,18 +890,12 @@ int main(void)
         GPIO_PinState jsw_now  = HAL_GPIO_ReadPin(JOY_SW_PORT, JOY_SW_PIN);
         GPIO_PinState btn1_now = HAL_GPIO_ReadPin(BTN1_PORT, BTN1_PIN);
         GPIO_PinState btn2_now = HAL_GPIO_ReadPin(BTN2_PORT, BTN2_PIN);
-        uint8_t       k1_click = 0U;
-        uint8_t       k2_click = 0U;
-        uint8_t       fire_pressed = 0U;
-
-        (void)btn1_now;
-        (void)btn2_now;
 
         if ((last_k1_state == GPIO_PIN_RESET) && (k1_now == GPIO_PIN_SET))
         {
             HAL_Delay(20);
             if (HAL_GPIO_ReadPin(K1_PORT, K1_PIN) == GPIO_PIN_SET)
-                k1_click = 1U;
+                SEG_StartK1Countdown();
         }
         last_k1_state = k1_now;
 
@@ -1157,187 +903,61 @@ int main(void)
         {
             HAL_Delay(20);
             if (HAL_GPIO_ReadPin(K2_PORT, K2_PIN) == GPIO_PIN_SET)
-                k2_click = 1U;
+                SEG_StartK2Show88();
         }
         last_k2_state = k2_now;
 
-        if (app_state != last_drawn_state)
+        if ((last_jsw_state == GPIO_PIN_SET) && (jsw_now == GPIO_PIN_RESET))
         {
-            if (app_state == APP_MODE_SELECT)
+            HAL_Delay(20);
+            if (HAL_GPIO_ReadPin(JOY_SW_PORT, JOY_SW_PIN) == GPIO_PIN_RESET)
             {
-                LCD_DrawModeSelect();
-                last_drawn_mode = (game_mode_t)255;
+                last_jsw_press_tick  = HAL_GetTick();
+                jsw_has_been_pressed = 1U;
+                laser_on_press();
             }
-            else if (app_state == APP_CAR_SELECT)
-            {
-                LCD_DrawCarSelect();
-                last_drawn_car = (car_type_t)255;
-            }
-            else
-            {
-                LCD_DrawGameLayout();
-                lcd_fast_tick = 0U;
-                lcd_slow_tick = 0U;
-                current_dir_cmd = 'S';
-                last_direction_change_tick = 0U;
-                last_fire_input_state = car_uses_k2_fire() ? GPIO_PIN_RESET : GPIO_PIN_SET;
-            }
-
-            last_drawn_state = app_state;
         }
 
-        if (app_state == APP_MODE_SELECT)
+        if ((last_jsw_state == GPIO_PIN_RESET) && (jsw_now == GPIO_PIN_SET))
         {
-            HAL_GPIO_WritePin(LASER_PORT, LASER_PIN, GPIO_PIN_RESET);
-            laser_state = LASER_IDLE;
-            fire_cmd_priority = 0U;
-            strcpy(laser_line, "READY");
-            strcpy(motion_line, "STOP  0%");
-            Motor_SendCmd('S', 0);
-            RGB_Set(1, 1, 1);
-
-            if (selected_mode != last_drawn_mode)
-            {
-                LCD_UpdateModeSelection();
-                last_drawn_mode = selected_mode;
-            }
-
-            if (k1_click)
-            {
-                selected_mode = (game_mode_t)(((uint8_t)selected_mode + 1U) % 3U);
-            }
-
-            if (k2_click)
-            {
-                selected_car = CAR_V0;
-                app_state = APP_CAR_SELECT;
-            }
+            HAL_Delay(20);
+            if (HAL_GPIO_ReadPin(JOY_SW_PORT, JOY_SW_PIN) == GPIO_PIN_SET)
+                laser_on_release();
         }
-        else if (app_state == APP_CAR_SELECT)
+
+        last_jsw_state = jsw_now;
+
+        if (HAL_GetTick() - ds18b20_last_tick >= 2000U)
         {
-            HAL_GPIO_WritePin(LASER_PORT, LASER_PIN, GPIO_PIN_RESET);
-            laser_state = LASER_IDLE;
-            fire_cmd_priority = 0U;
-            strcpy(laser_line, "READY");
-            strcpy(motion_line, "STOP  0%");
-            Motor_SendCmd('S', 0);
-            RGB_Set(1, 1, 1);
-
-            if (selected_car != last_drawn_car)
-            {
-                LCD_UpdateCarSelection();
-                last_drawn_car = selected_car;
-            }
-
-            if (k1_click)
-            {
-                selected_car = (car_type_t)(((uint8_t)selected_car + 1U) % 4U);
-            }
-
-            if (k2_click)
-            {
-                app_state = APP_GAME;
-            }
+            ds18b20_raw       = DS18B20_ReadRaw();
+            ds18b20_last_tick = HAL_GetTick();
         }
-        else
+
+        laser_update();
+        RGB_Update_From_State();
+
+        if (btn1_now == GPIO_PIN_RESET)
         {
-            if (selected_mode == GAME_MODE_1)
-            {
-                if (car_uses_k2_fire())
-                {
-                    if ((last_fire_input_state == GPIO_PIN_RESET) && (k2_now == GPIO_PIN_SET))
-                    {
-                        HAL_Delay(20);
-                        if (HAL_GPIO_ReadPin(K2_PORT, K2_PIN) == GPIO_PIN_SET)
-                        {
-                            laser_on_press();
-                        }
-                    }
+            RGB_Set(1, 0, 1);
+        }
+        else if (btn2_now == GPIO_PIN_RESET)
+        {
+            RGB_Set(1, 1, 0);
+        }
 
-                    if ((last_fire_input_state == GPIO_PIN_SET) && (k2_now == GPIO_PIN_RESET))
-                    {
-                        HAL_Delay(20);
-                        if (HAL_GPIO_ReadPin(K2_PORT, K2_PIN) == GPIO_PIN_RESET)
-                        {
-                            laser_on_release();
-                        }
-                    }
+        SEG_Task();
+        Drive_Task(x_raw, y_raw);
 
-                    last_fire_input_state = k2_now;
-                    fire_pressed = (k2_now == GPIO_PIN_SET) ? 1U : 0U;
-                }
-                else
-                {
-                    if ((last_fire_input_state == GPIO_PIN_SET) && (jsw_now == GPIO_PIN_RESET))
-                    {
-                        HAL_Delay(20);
-                        if (HAL_GPIO_ReadPin(JOY_SW_PORT, JOY_SW_PIN) == GPIO_PIN_RESET)
-                        {
-                            last_jsw_press_tick  = HAL_GetTick();
-                            jsw_has_been_pressed = 1U;
-                            laser_on_press();
-                        }
-                    }
+        if ((now - lcd_fast_tick) >= LCD_FAST_UPDATE_MS)
+        {
+            lcd_fast_tick = now;
+            LCD_UpdateFast(x_raw, y_raw);
+        }
 
-                    if ((last_fire_input_state == GPIO_PIN_RESET) && (jsw_now == GPIO_PIN_SET))
-                    {
-                        HAL_Delay(20);
-                        if (HAL_GPIO_ReadPin(JOY_SW_PORT, JOY_SW_PIN) == GPIO_PIN_SET)
-                        {
-                            laser_on_release();
-                        }
-                    }
-
-                    last_fire_input_state = jsw_now;
-                    fire_pressed = (jsw_now == GPIO_PIN_RESET) ? 1U : 0U;
-                }
-
-                if (HAL_GetTick() - ds18b20_last_tick >= 2000U)
-                {
-                    ds18b20_raw       = DS18B20_ReadRaw();
-                    ds18b20_last_tick = HAL_GetTick();
-                }
-
-                laser_update();
-                RGB_Update_From_State();
-                SEG_Task();
-                Drive_Task(x_raw, y_raw);
-
-                if ((now - lcd_fast_tick) >= LCD_FAST_UPDATE_MS)
-                {
-                    lcd_fast_tick = now;
-                    LCD_UpdateGameFast(x_raw, y_raw);
-                }
-
-                if ((now - lcd_slow_tick) >= LCD_SLOW_UPDATE_MS)
-                {
-                    lcd_slow_tick = now;
-                    LCD_UpdateGameSlow(fire_pressed);
-                }
-            }
-            else
-            {
-                HAL_GPIO_WritePin(LASER_PORT, LASER_PIN, GPIO_PIN_RESET);
-                laser_state = LASER_IDLE;
-                fire_cmd_priority = 0U;
-                strcpy(laser_line, "MODE TODO");
-                snprintf(motion_line, sizeof(motion_line), "%s WAIT", MODE_Name(selected_mode));
-                Motor_SendCmd('S', 0);
-                RGB_Set(1, 1, 0);
-                SEG_AllOff();
-
-                if ((now - lcd_fast_tick) >= LCD_FAST_UPDATE_MS)
-                {
-                    lcd_fast_tick = now;
-                    LCD_UpdateGameFast(x_raw, y_raw);
-                }
-
-                if ((now - lcd_slow_tick) >= LCD_SLOW_UPDATE_MS)
-                {
-                    lcd_slow_tick = now;
-                    LCD_UpdateGameSlow(0U);
-                }
-            }
+        if ((now - lcd_slow_tick) >= LCD_SLOW_UPDATE_MS)
+        {
+            lcd_slow_tick = now;
+            LCD_UpdateSlow(jsw_now, ds18b20_raw, k1_now, k2_now);
         }
 
         HAL_Delay(10);
