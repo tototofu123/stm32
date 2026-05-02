@@ -247,13 +247,14 @@ void LCD_DrawMode2Stats(uint16_t current_move, uint16_t total_moves, uint32_t di
     char line2[32];
     
     snprintf(line1, sizeof(line1), "Moves: %u/%u", current_move, total_moves);
-    snprintf(line2, sizeof(line2), "Dist: %lu  Time: %lus", distance, seconds_left);
+    snprintf(line2, sizeof(line2), "Dist:%lu Time:%lus", distance, seconds_left);
     
+    // Draw inside the canvas (Y > 80)
     LCD_SetColors(BLACK, UI_BG);
-    LCD_ClearTextField(10, 25, 28, UI_BG);
-    LCD_TEXT(10, 25, line1);
-    LCD_ClearTextField(10, 40, 28, UI_BG);
-    LCD_TEXT(10, 40, line2);
+    LCD_ClearTextField(15, 90, 20, UI_BG);
+    LCD_TEXT(15, 90, line1);
+    LCD_ClearTextField(15, 110, 20, UI_BG);
+    LCD_TEXT(15, 110, line2);
     LCD_SetColors(BLUE, WHITE);
 }
 

@@ -1,0 +1,25 @@
+# IDEAS FOR TOMORROW
+
+## Mode 2 Drawing Enhancements
+- [ ] Real-time Time Estimation: Show estimated move time *while* drawing.
+- [ ] Time Efficiency Gradient: Update the cursor/text color based on path length:
+    - WHITE: Very short time.
+    - GREEN: Optimal (~10 seconds).
+    - BLUE: Medium (~20 seconds).
+    - RED: Long (~30 seconds).
+    - DIM WHITE: Max (~40 seconds).
+- [ ] Real-time Stats: Show current Step count, Distance, and Time on the canvas *during* the drawing phase.
+
+## Mode 2 Hardware Integration
+- [ ] 7-Segment Display Commands: Show current movement command on the 7-seg LEDs:
+    - 'L' for Left.
+    - 'F' for Forward.
+    - 'S' for Stop.
+    - 'A' for Right (since 'R' is not possible on 7-seg).
+
+## Mode 3 Concept Ideas
+1. **AI Patrol Mode:** Car moves in a continuous square/circle loop. LCD shows a "Radar" sweep. Laser fires automatically at simulated targets.
+2. **Live Record & Playback:** Drive the car live (Mode 1 style) while recording joystick inputs. Then, replay the exact live performance automatically.
+3. **Rhythmic Dance Mode:** Car performs a pre-programmed sequence of moves synchronized with RGB LED patterns and a BPM counter on the 7-segment display.
+4. **Joystick Precision Mission:** Move at very low speeds to reach a target on the LCD. The 7-segment display acts as a "Noise Meter"—don't move too jerky or you fail!
+5. **Virtual Laser Turret:** Car remains stationary. Use Joystick/Touch to control a crosshair on the LCD to shoot moving targets on the screen with the physical laser.
