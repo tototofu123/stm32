@@ -13,7 +13,8 @@ uint8_t     touch_display_flag = 0U;
 
 void LCD_ClearTextField(uint16_t x, uint16_t y, uint16_t chars, uint16_t bg)
 {
-    LCD_Clear(x, y, chars * 8, 16, bg); // WIDTH_EN_CHAR=8, HEIGHT_EN_CHAR=16
+    // Width = 8, Height = 16 for standard font
+    LCD_Clear(x, y, chars * 8, 16, bg); 
 }
 
 void LCD_DrawModeSelect(void)
@@ -32,7 +33,7 @@ void LCD_DrawModeSelect(void)
 
     LCD_Clear(0, 250, 240, 70, UI_BOTTOM);
     LCD_TEXT(10, 260, "MODE 1 = PLAY NOW");
-    LCD_TEXT(10, 280, "MODE 2/3 = PLACEHOLDER");
+    LCD_TEXT(10, 280, "MODE 2 = DRAW FIGHT");
 }
 
 void LCD_UpdateModeSelection(void)
@@ -160,6 +161,18 @@ void LCD_DrawGameLayout(void)
     LCD_Clear(0, 215, 240, 105, UI_BOTTOM);
     LCD_TEXT(10, 225, "Car:");
     LCD_TEXT(10, 245, "Car Type:");
+}
+
+void LCD_DrawMode2Canvas(void) 
+{
+    LCD_Clear(0, 0, 240, 320, UI_BG);
+    LCD_Clear(0, 0, 240, 20, UI_HEAD);
+    LCD_TEXT(10, 5, "KAYAK DRAW FIGHT");
+    LCD_TEXT(10, 30, "Use Joy to Draw");
+    LCD_TEXT(10, 50, "K2 to Confirm Route");
+    
+    // Draw boundary line (ensure LCD_DrawLine exists in your lcd.c/h!)
+    LCD_DrawLine(0, 75, 240, 75, MY_BLACK);
 }
 
 void LCD_UpdateGameFast(uint32_t x_raw, uint32_t y_raw)

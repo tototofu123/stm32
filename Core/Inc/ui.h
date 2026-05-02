@@ -38,6 +38,8 @@ void LCD_DrawCarSelect(void);
 void LCD_UpdateCarSelection(void);
 void LCD_DrawCarConfirm(void);
 void LCD_DrawGameLayout(void);
+void LCD_DrawMode2InputSelect(void);
+void LCD_DrawMode2Canvas(void);
 void LCD_UpdateGameFast(uint32_t x_raw, uint32_t y_raw);
 void LCD_UpdateGameSlow(uint8_t fire_pressed);
 

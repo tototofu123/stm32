@@ -83,6 +83,8 @@ void laser_on_press(void);
 void laser_on_release(void);
 void laser_update(void);
 void RGB_Update_From_State(void);
-void Drive_Task(uint32_t x_raw, uint32_t y_raw);
+
+// Central Game Router
+void Game_Router_Task(uint32_t x_raw, uint32_t y_raw, uint8_t k1_click, uint8_t k2_click, uint8_t fire_pressed);
 
 #endif // GAME_LOGIC_H
