@@ -1,0 +1,10 @@
+../Core/Src/ui.c:14:6:LCD_ClearTextField	32	static
+../Core/Src/ui.c:19:6:LCD_DrawModeSelect	16	static
+../Core/Src/ui.c:38:6:LCD_UpdateModeSelection	16	static
+../Core/Src/ui.c:48:6:LCD_DrawModeConfirm	16	static
+../Core/Src/ui.c:68:6:LCD_DrawCarSelect	48	static
+../Core/Src/ui.c:101:6:LCD_UpdateCarSelection	16	static
+../Core/Src/ui.c:124:6:LCD_DrawCarConfirm	16	static
+../Core/Src/ui.c:144:6:LCD_DrawGameLayout	16	static
+../Core/Src/ui.c:165:6:LCD_UpdateGameFast	56	static
+../Core/Src/ui.c:209:6:LCD_UpdateGameSlow	112	static

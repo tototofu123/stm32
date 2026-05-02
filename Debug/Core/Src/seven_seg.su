@@ -1,0 +1,8 @@
+../Core/Src/seven_seg.c:11:6:SEG_WritePin	16	static
+../Core/Src/seven_seg.c:16:6:SEG_AllOff	8	static
+../Core/Src/seven_seg.c:36:6:SEG_ShowLeft	16	static
+../Core/Src/seven_seg.c:63:6:SEG_ShowRight	16	static
+../Core/Src/seven_seg.c:89:6:SEG_ShowPair	16	static
+../Core/Src/seven_seg.c:98:6:SEG_ShowTenths	16	static
+../Core/Src/seven_seg.c:105:6:SEG_StartCooldownCountdown	16	static
+../Core/Src/seven_seg.c:115:6:SEG_Task	16	static

@@ -1,0 +1,9 @@
+../Core/Src/touch.c:4:13:T_Delay	16	static,ignoring_inline_asm
+../Core/Src/touch.c:9:13:T_WriteBit	16	static
+../Core/Src/touch.c:18:16:T_ReadBit	8	static
+../Core/Src/touch.c:27:13:T_WriteByte	24	static
+../Core/Src/touch.c:32:17:XPT2046_Read12	24	static
+../Core/Src/touch.c:47:9:TouchPressed	8	static
+../Core/Src/touch.c:52:10:TouchReadXRaw	8	static
+../Core/Src/touch.c:57:10:TouchReadYRaw	8	static
+../Core/Src/touch.c:62:10:map_u16	16	static

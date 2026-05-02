@@ -1,0 +1,5 @@
+../Core/Src/alerts.c:8:6:RGB_Set	16	static
+../Core/Src/alerts.c:16:6:Buzzer_Set	16	static
+../Core/Src/alerts.c:21:6:Buzzer_BeepShort	8	static
+../Core/Src/alerts.c:29:6:Buzzer_BeepLong	8	static
+../Core/Src/alerts.c:37:6:Buzzer_Task	16	static
