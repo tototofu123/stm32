@@ -224,7 +224,12 @@ void LCD_UpdateMode2InputSelect(void) {
 void LCD_DrawMode2CommandHistory(char cmd, uint8_t slot, uint8_t is_new)
 {
     uint16_t x = 5 + (slot * 23);
-    uint16_t y = 50; // Above boundary line
+    uint16_t y = 55; 
+    
+    // Character fix: strictly F, L, R, S
+    if (cmd == '>') cmd = 'R';
+    if (cmd == '<') cmd = 'L';
+    if (cmd == 'B') cmd = 'F'; // No backward, treat as forward if it somehow appears
     
     if (is_new) {
         LCD_SetColors(GREEN, UI_BG);
@@ -234,6 +239,22 @@ void LCD_DrawMode2CommandHistory(char cmd, uint8_t slot, uint8_t is_new)
     
     LCD_DrawChar(x, y, cmd);
     LCD_SetColors(BLUE, WHITE); // Reset
+}
+
+void LCD_DrawMode2Stats(uint16_t current_move, uint16_t total_moves, uint32_t distance, uint32_t seconds_left)
+{
+    char line1[32];
+    char line2[32];
+    
+    snprintf(line1, sizeof(line1), "Moves: %u/%u", current_move, total_moves);
+    snprintf(line2, sizeof(line2), "Dist: %lu  Time: %lus", distance, seconds_left);
+    
+    LCD_SetColors(BLACK, UI_BG);
+    LCD_ClearTextField(10, 25, 28, UI_BG);
+    LCD_TEXT(10, 25, line1);
+    LCD_ClearTextField(10, 40, 28, UI_BG);
+    LCD_TEXT(10, 40, line2);
+    LCD_SetColors(BLUE, WHITE);
 }
 
 void LCD_DrawMode2Canvas(void) 
@@ -250,7 +271,8 @@ void LCD_DrawMode2Canvas(void)
         LCD_TEXT(10, 25, "Use Joy to Draw");
     }
     
-    LCD_TEXT(140, 25, "K1:RST K2:OK");
+    LCD_TEXT(160, 25, "K1:RST");
+    LCD_TEXT(160, 45, "K2:OK");
     
     // Draw boundary line
     LCD_DrawLine(0, 75, 240, 75, MY_BLACK);

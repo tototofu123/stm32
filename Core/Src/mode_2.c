@@ -7,8 +7,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <math.h>
 
-#define MAX_POINTS 1000 // Increased from 100 to 1000 to remove limit
+#define MAX_POINTS 1000 
 #define CANVAS_X_MIN 10
 #define CANVAS_X_MAX 230
 #define CANVAS_Y_MIN 80
@@ -32,6 +33,9 @@ static uint32_t move_timer = 0;
 static uint16_t m2_visit_x[MAX_POINTS];
 static uint16_t m2_visit_y[MAX_POINTS];
 static uint16_t m2_visit_count = 0;
+static uint32_t total_distance = 0;
+static uint32_t remaining_time_ms = 0;
+
 mode2_input_method_t selected_input = M2_INPUT_JOYSTICK;
 
 void Mode2_Init(void) {
@@ -50,10 +54,34 @@ void Mode2_ResetCanvas(void) {
     target_pt_idx = 0;
     history_slot = 0;
     last_history_cmd = ' ';
+    total_distance = 0;
+    remaining_time_ms = 0;
     strcpy(laser_line, "READY");
     strcpy(motion_line, "READY");
     m2_state = M2_STATE_DRAWING;
     LCD_DrawMode2Canvas();
+}
+
+static void DrawCanvasArrow(uint16_t x, uint16_t y, char dir, uint16_t color)
+{
+    // Draw a small 7x7 arrow pointing in dir
+    if (dir == 'F') { // Up
+        LCD_DrawLine(x, y - 4, x - 3, y, color);
+        LCD_DrawLine(x, y - 4, x + 3, y, color);
+        LCD_DrawLine(x, y - 4, x, y + 4, color);
+    } else if (dir == 'B') { // Down
+        LCD_DrawLine(x, y + 4, x - 3, y, color);
+        LCD_DrawLine(x, y + 4, x + 3, y, color);
+        LCD_DrawLine(x, y + 4, x, y - 4, color);
+    } else if (dir == 'L') { // Left
+        LCD_DrawLine(x - 4, y, x, y - 3, color);
+        LCD_DrawLine(x - 4, y, x, y + 3, color);
+        LCD_DrawLine(x - 4, y, x + 4, y, color);
+    } else if (dir == 'R') { // Right
+        LCD_DrawLine(x + 4, y, x, y - 3, color);
+        LCD_DrawLine(x + 4, y, x, y + 3, color);
+        LCD_DrawLine(x + 4, y, x - 4, y, color);
+    }
 }
 
 void Mode2_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_click, 
@@ -115,15 +143,34 @@ void Mode2_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
         if (m2_cursor_y > CANVAS_Y_MAX) m2_cursor_y = CANVAS_Y_MAX;
 
         if (old_x != m2_cursor_x || old_y != m2_cursor_y) {
-            // Overwrite OLD head with the path line color (BLUE)
-            LCD_Clear(old_x - 5, old_y - 5, 11, 11, BLUE);
+            // Determine line color (Blue or Black if overlap)
+            uint8_t is_overlap = 0;
+            if (m2_path_count > 5) {
+                for(int i=0; i<m2_path_count-5; i++) {
+                    if (abs(m2_cursor_x - m2_path_x[i]) <= 12 && abs(m2_cursor_y - m2_path_y[i]) <= 12) {
+                        is_overlap = 1;
+                        break;
+                    }
+                }
+            }
+            uint16_t line_color = is_overlap ? BLACK : BLUE;
+
+            // Clean previous head artifacts
+            LCD_Clear(old_x - 5, old_y - 5, 11, 11, line_color);
             
-            // Draw path line segment
-            LCD_DrawLine(old_x, old_y, m2_cursor_x, m2_cursor_y, BLUE);
+            // Draw path line
+            LCD_DrawLine(old_x, old_y, m2_cursor_x, m2_cursor_y, line_color);
             
+            if (is_overlap) {
+                // High-contrast RGB overlap marker
+                LCD_Clear(m2_cursor_x - 1, m2_cursor_y - 1, 3, 3, GREEN);
+                LCD_DrawDot(m2_cursor_x - 2, m2_cursor_y - 2, RED);
+                LCD_DrawDot(m2_cursor_x + 2, m2_cursor_y + 2, BLUE);
+            }
+
             // Draw NEW Dragon Head (ALWAYS ON TOP)
             LCD_Clear(m2_cursor_x - 5, m2_cursor_y - 5, 11, 11, YELLOW);
-            LCD_Clear(m2_cursor_x - 2, m2_cursor_y - 2, 5, 5, BLACK); // 5x5 Black center dot
+            LCD_Clear(m2_cursor_x - 2, m2_cursor_y - 2, 5, 5, BLACK); // 5x5 Black Square center
         }
 
         if (old_x != m2_cursor_x || old_y != m2_cursor_y) {
@@ -149,8 +196,17 @@ void Mode2_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
             m2_visit_count = 0;
             history_slot = 0;
             last_history_cmd = ' ';
-            Motor_SendCmd('S', 0); // START STOP COMMAND
-            move_timer = now + 600; 
+            total_distance = 0;
+            
+            // Pre-calculate total distance and estimated time
+            remaining_time_ms = 0;
+            for (int i = 0; i < m2_path_count - 1; i++) {
+                uint32_t d = (uint32_t)sqrt(pow(m2_path_x[i+1]-m2_path_x[i], 2) + pow(m2_path_y[i+1]-m2_path_y[i], 2));
+                remaining_time_ms += d * 12; // Base timing
+            }
+
+            Motor_SendCmd('S', 0); // START STOP
+            move_timer = now + 400; 
         }
     }
     else if (m2_state == M2_STATE_RESET_CONFIRM) {
@@ -166,25 +222,29 @@ void Mode2_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
         if (k2_click) { Mode2_ResetCanvas(); }
     }
     else if (m2_state == M2_STATE_MOVING) {
-        if (target_pt_idx < m2_path_count) {
+        // Position Indicator (Directional Arrow on Canvas)
+        if (target_pt_idx < m2_path_count - 1) {
             uint16_t curr_x = m2_path_x[target_pt_idx];
             uint16_t curr_y = m2_path_y[target_pt_idx];
             
-            // Extra thick indicator
-            LCD_DrawLine(curr_x - 6, curr_y, curr_x + 6, curr_y, RED);
-            LCD_DrawLine(curr_x - 6, curr_y - 1, curr_x + 6, curr_y - 1, RED);
-            LCD_DrawLine(curr_x - 6, curr_y + 1, curr_x + 6, curr_y + 1, RED);
-            LCD_DrawLine(curr_x, curr_y - 6, curr_x, curr_y + 6, RED);
-            LCD_DrawLine(curr_x - 1, curr_y - 6, curr_x - 1, curr_y + 6, RED);
-            LCD_DrawLine(curr_x + 1, curr_y - 6, curr_x + 1, curr_y + 6, RED);
+            int dx = m2_path_x[target_pt_idx + 1] - m2_path_x[target_pt_idx];
+            int dy = m2_path_y[target_pt_idx + 1] - m2_path_y[target_pt_idx];
+            char canvas_dir = 'F';
+            if (abs(dx) >= abs(dy)) canvas_dir = (dx > 0) ? 'R' : 'L';
+            else canvas_dir = (dy > 0) ? 'B' : 'F';
+
+            DrawCanvasArrow(curr_x, curr_y, canvas_dir, RED);
             
             if (m2_visit_count > 0) {
                 LCD_DrawLine(m2_visit_x[m2_visit_count - 1], m2_visit_y[m2_visit_count - 1], curr_x, curr_y, RED);
             }
         }
 
+        // Stats Update
+        LCD_DrawMode2Stats(target_pt_idx + 1, m2_path_count, total_distance, remaining_time_ms / 1000);
+
         if (target_pt_idx >= m2_path_count) {
-            Motor_SendCmd('S', 0); // FINISH STOP COMMAND
+            Motor_SendCmd('S', 0); // FINISH STOP
             LCD_ClearTextField(10, 25, 24, UI_BG);
             LCD_SetColors(RED, UI_BG);
             LCD_TEXT(10, 25, "READY TO FIRE! (K1)");
@@ -208,32 +268,30 @@ void Mode2_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
 
             int dx = m2_path_x[target_pt_idx + 1] - m2_path_x[target_pt_idx];
             int dy = m2_path_y[target_pt_idx + 1] - m2_path_y[target_pt_idx];
-            char cmd = 'S';
-            char history_char = 'F';
+            char cmd = 'F'; 
 
-            if (abs(dx) >= abs(dy)) { 
-                cmd = (dx > 0) ? 'R' : 'L'; 
-                history_char = (dx > 0) ? '>' : '<';
-            }
-            else { 
-                cmd = 'F'; // Only F, no B
-                history_char = 'F';
-            }
+            if (abs(dx) >= abs(dy)) { cmd = (dx > 0) ? 'R' : 'L'; }
+            else { cmd = 'F'; }
 
-            uint32_t duration = (abs(dx) > abs(dy) ? abs(dx) : abs(dy)) * 35; // Increased for full physical map coverage
+            uint32_t seg_dist = (uint32_t)sqrt(pow(dx, 2) + pow(dy, 2));
+            uint32_t duration = seg_dist * 12; // Faster multiplier
 
             if (duration > 0) {
                 Motor_SendCmd(cmd, 60);
                 
-                // History display at TOP
+                // History display at TOP (FLRS only)
                 uint8_t prev_slot = (history_slot == 0) ? 9 : (history_slot - 1);
                 if (last_history_cmd != ' ') {
                     LCD_DrawMode2CommandHistory(last_history_cmd, prev_slot, 0); 
                 }
-                LCD_DrawMode2CommandHistory(history_char, history_slot, 1); 
-                last_history_cmd = history_char;
+                LCD_DrawMode2CommandHistory(cmd, history_slot, 1); 
+                last_history_cmd = cmd;
                 history_slot = (history_slot + 1) % 10;
                 
+                total_distance += seg_dist;
+                if (remaining_time_ms > duration) remaining_time_ms -= duration;
+                else remaining_time_ms = 0;
+
                 move_timer = now + duration;
                 target_pt_idx++;
             } else { target_pt_idx++; }
@@ -251,7 +309,7 @@ void Mode2_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
             LCD_ClearTextField(10, 25, 24, UI_BG);
             LCD_TEXT(10, 25, "ROUND COMPLETE");
             HAL_Delay(500);
-            LCD_TEXT(140, 25, "K2:RESET");
+            LCD_TEXT(160, 25, "K2:RESET");
             LCD_SetColors(BLUE, UI_BG);
             m2_state = M2_STATE_FINISHED;
         }
