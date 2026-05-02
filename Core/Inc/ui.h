@@ -19,7 +19,7 @@
 #define MY_BLACK            0x0000
 #define MY_GREEN            0x07E0
 
-#define LCD_TEXT(x, y, s)   LCD_DrawString((x), (y), (unsigned char *)(s))
+#define LCD_TEXT(x, y, s)   LCD_DrawString((x), (y), (const char *)(s))
 
 // Externs
 extern app_state_t last_drawn_state;
@@ -40,6 +40,7 @@ void LCD_DrawCarConfirm(void);
 void LCD_DrawGameLayout(void);
 void LCD_DrawMode2InputSelect(void);
 void LCD_DrawMode2Canvas(void);
+void LCD_DrawMode2ResetConfirm(void);
 void LCD_UpdateGameFast(uint32_t x_raw, uint32_t y_raw);
 void LCD_UpdateGameSlow(uint8_t fire_pressed);
 

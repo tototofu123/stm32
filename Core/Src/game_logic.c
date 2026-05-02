@@ -376,11 +376,6 @@ void Game_Router_Task(uint32_t x_raw, uint32_t y_raw, uint8_t k1_click, uint8_t 
         RGB_Update_From_State();
         Drive_Task_Mode1(x_raw, y_raw);
     }
-    else if (selected_mode == GAME_MODE_2) {
-        Mode2_Run(x_raw, y_raw, k1_click, k2_click, fire_pressed);
-        laser_update();
-        RGB_Update_From_State();
-    }
     else {
         Motor_SendCmd('S', 0);
     }

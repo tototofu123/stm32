@@ -1,6 +1,7 @@
 #include "ui.h"
 #include "lcd.h"
 #include "peripherals.h"
+#include "mode_2.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -163,16 +164,53 @@ void LCD_DrawGameLayout(void)
     LCD_TEXT(10, 245, "Car Type:");
 }
 
+void LCD_DrawMode2InputSelect(void) {
+    LCD_Clear(0, 0, 240, 320, UI_BG);
+    LCD_Clear(0, 0, 240, 40, UI_HEAD);
+    LCD_TEXT(40, 10, "SELECT CONTROL");
+    
+    // Joystick Box
+    LCD_Clear(18, 68, 204, 84, MY_BLACK);
+    LCD_Clear(20, 70, 200, 80, (selected_input == 0) ? UI_BOX_SEL : UI_BOX_NSEL);
+    LCD_TEXT(50, 100, "[JOYSTICK]");
+    
+    // Touch Box
+    LCD_Clear(18, 168, 204, 84, MY_BLACK);
+    LCD_Clear(20, 170, 200, 80, (selected_input == 1) ? UI_BOX_SEL : UI_BOX_NSEL);
+    LCD_TEXT(60, 200, "[TOUCH SCREEN]");
+    
+    LCD_Clear(0, 280, 240, 40, UI_BOTTOM);
+    LCD_TEXT(20, 290, "K1:Toggle  K2:Confirm");
+}
+
 void LCD_DrawMode2Canvas(void) 
 {
     LCD_Clear(0, 0, 240, 320, UI_BG);
     LCD_Clear(0, 0, 240, 20, UI_HEAD);
-    LCD_TEXT(10, 5, "KAYAK DRAW FIGHT");
-    LCD_TEXT(10, 30, "Use Joy to Draw");
-    LCD_TEXT(10, 50, "K2 to Confirm Route");
+    LCD_TEXT(10, 5, "DRAW FIGHT");
     
-    // Draw boundary line (ensure LCD_DrawLine exists in your lcd.c/h!)
-    LCD_DrawLine(0, 75, 240, 75, MY_BLACK);
+    if (m2_input_method == M2_INPUT_TOUCH) {
+        LCD_TEXT(10, 30, "Click on LCD to start");
+        LCD_TEXT(10, 48, "the route drawing");
+    } else {
+        LCD_TEXT(10, 30, "Use Joy to Draw");
+    }
+    
+    LCD_TEXT(10, 65, "K1:Clear K2:Confirm");
+    
+    // Draw boundary line
+    LCD_DrawLine(0, 85, 240, 85, MY_BLACK);
+}
+
+void LCD_DrawMode2ResetConfirm(void)
+{
+    // Semi-transparent look is hard with simple LCD, so just draw a box
+    LCD_Clear(20, 100, 200, 120, MY_BLACK);
+    LCD_Clear(22, 102, 196, 116, WHITE);
+    
+    LCD_TEXT(40, 115, "RESET CANVAS?");
+    LCD_TEXT(40, 140, "K1: REGRET (NO)");
+    LCD_TEXT(40, 165, "K2: CONFIRM (YES)");
 }
 
 void LCD_UpdateGameFast(uint32_t x_raw, uint32_t y_raw)

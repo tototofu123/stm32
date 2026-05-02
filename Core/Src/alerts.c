@@ -2,6 +2,7 @@
 
 // Buzzer state trackers
 uint8_t  buzzer_active   = 0U;
+uint8_t  buzzer_muted    = 0U;
 uint32_t buzzer_tick     = 0U;
 uint32_t buzzer_duration = 0U;
 
@@ -15,11 +16,19 @@ void RGB_Set(uint8_t r, uint8_t g, uint8_t b)
 
 void Buzzer_Set(uint8_t on)
 {
+    if (buzzer_muted && on) return;
     HAL_GPIO_WritePin(BEEP_PORT, BEEP_PIN, on ? GPIO_PIN_SET : GPIO_PIN_RESET);
+}
+
+void Buzzer_SetMute(uint8_t mute)
+{
+    buzzer_muted = mute;
+    if (mute) Buzzer_Set(0);
 }
 
 void Buzzer_BeepShort(void)
 {
+    if (buzzer_muted) return;
     buzzer_active = 1U;
     buzzer_tick = HAL_GetTick();
     buzzer_duration = BEEP_SHORT_MS;
@@ -28,6 +37,7 @@ void Buzzer_BeepShort(void)
 
 void Buzzer_BeepLong(void)
 {
+    if (buzzer_muted) return;
     buzzer_active = 1U;
     buzzer_tick = HAL_GetTick();
     buzzer_duration = BEEP_LONG_MS;

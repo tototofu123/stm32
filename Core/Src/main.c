@@ -241,6 +241,7 @@ int main(void)
         // --- Application State Machine ---
         if (app_state == APP_MODE_SELECT)
         {
+            Buzzer_SetMute(0);
             HAL_GPIO_WritePin(LASER_PORT, LASER_PIN, GPIO_PIN_RESET);
             laser_state = LASER_IDLE;
             fire_cmd_priority = 0U;
@@ -294,6 +295,7 @@ int main(void)
         }
         else if (app_state == APP_MODE_CONFIRM)
         {
+            Buzzer_SetMute(0);
             HAL_GPIO_WritePin(LASER_PORT, LASER_PIN, GPIO_PIN_RESET);
             laser_state = LASER_IDLE;
             fire_cmd_priority = 0U;
@@ -307,8 +309,12 @@ int main(void)
 
             if (k2_click) {
                 Buzzer_BeepLong();
-                selected_car = CAR_V0;
-                app_state = APP_CAR_SELECT;
+                if (selected_mode == GAME_MODE_2) {
+                    app_state = APP_GAME;
+                } else {
+                    selected_car = CAR_V0;
+                    app_state = APP_CAR_SELECT;
+                }
             }
 
             if (ts_click) {
@@ -318,8 +324,12 @@ int main(void)
                         app_state = APP_MODE_SELECT;
                     } else if (px >= 130 && px <= 210) {
                         Buzzer_BeepLong();
-                        selected_car = CAR_V0;
-                        app_state = APP_CAR_SELECT;
+                        if (selected_mode == GAME_MODE_2) {
+                            app_state = APP_GAME;
+                        } else {
+                            selected_car = CAR_V0;
+                            app_state = APP_CAR_SELECT;
+                        }
                     }
                 }
             }
@@ -466,7 +476,7 @@ int main(void)
                 RGB_Update_From_State();
                 Buzzer_Task();
                 SEG_Task();
-                Drive_Task(x_raw, y_raw);
+                Game_Router_Task(x_raw, y_raw, k1_click, k2_click, fire_pressed);
 
                 if ((now - lcd_fast_tick) >= LCD_FAST_UPDATE_MS)
                 {
@@ -480,10 +490,19 @@ int main(void)
                     LCD_UpdateGameSlow(fire_pressed);
                 }
             }
+            else if (selected_mode == GAME_MODE_2)
+            {
+                Mode2_Run(x_raw, y_raw, k1_click, k2_click, fire_pressed, ts_pressed, ts_click, px, py);
+            }
             else
             {
-                uint8_t fire_active = (car_uses_k2_fire()) ? (k2_now == GPIO_PIN_SET) : (jsw_now == GPIO_PIN_RESET);
-                Game_Router_Task(x_raw, y_raw, k1_click, k2_click, fire_active);
+                // Mode 3 and other modes not yet implemented
+                HAL_GPIO_WritePin(LASER_PORT, LASER_PIN, GPIO_PIN_RESET);
+                laser_state = LASER_IDLE;
+                fire_cmd_priority = 0U;
+                Motor_SendCmd('S', 0);
+                RGB_Set(1, 1, 0);
+                Buzzer_Task();
             }
         }
 
