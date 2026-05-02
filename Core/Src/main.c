@@ -66,7 +66,10 @@ typedef enum {
     CAR_V0 = 0,
     CAR_V1,
     CAR_V2,
-    CAR_V3
+    CAR_V3,
+    CAR_V4,
+    CAR_V5,
+    CAR_V6
 } car_type_t;
 /* USER CODE END PTD */
 
@@ -218,6 +221,10 @@ uint8_t seg_dp = 0;
 
 uint32_t lcd_fast_tick = 0;
 uint32_t lcd_slow_tick = 0;
+uint32_t last_k1_event_tick = 0U;
+uint32_t last_k2_event_tick = 0U;
+uint8_t turn_delay_active = 0U;
+char turn_target_cmd = 'S';
 /* USER CODE END PV */
 
 void SystemClock_Config(void);
@@ -247,44 +254,14 @@ static void     LCD_UpdateCarSelection(void);
 static void     LCD_UpdateGameFast(uint32_t x_raw, uint32_t y_raw);
 static void     LCD_UpdateGameSlow(uint8_t fire_pressed);
 static void     LCD_ClearTextField(uint16_t x, uint16_t y, uint16_t chars, uint16_t bg);
-static const char *MODE_Name(game_mode_t mode);
-static const char *CAR_Code(car_type_t car);
-static const char *CAR_Label(car_type_t car);
-static uint32_t car_fire_ms(void);
-static uint32_t car_cooldown_ms(void);
-static uint8_t  car_speed_cap(uint8_t speed);
-static uint8_t  car_allows_move_while_firing(void);
-static uint8_t  car_uses_k2_fire(void);
-static uint8_t  car_auto_fire_enabled(void);
-static uint8_t  car_has_turn_delay(void);
-static void     ds_pin_out(void);
-static void     ds_pin_in(void);
-static void     ds_delay_us(uint16_t us);
-static uint8_t  ds_start(void);
-static void     ds_write(uint8_t data);
-static uint8_t  ds_read_byte(void);
-static int32_t  DS18B20_ReadRaw(void);
-static void     SEG_WritePin(GPIO_TypeDef *port, uint16_t pin, uint8_t on);
-static void     SEG_AllOff(void);
-static void     SEG_ShowLeft(uint8_t d, uint8_t dp);
-static void     SEG_ShowRight(uint8_t d);
-static void     SEG_ShowPair(uint8_t left, uint8_t right, uint8_t dp);
-static void     SEG_ShowTenths(int t);
-static void     SEG_StartCooldownCountdown(uint32_t cooldown_ms);
-static void     SEG_Task(void);
-void sendAT(const char *cmd);
-void readResponse(void);
-void WifiSetUp(void);
-
-/* USER CODE BEGIN 0 */
 static const char *MODE_Name(game_mode_t mode)
 {
     switch (mode)
     {
-    case GAME_MODE_1: return "MODE 1";
-    case GAME_MODE_2: return "MODE 2";
-    case GAME_MODE_3: return "MODE 3";
-    default:          return "MODE 1";
+        case GAME_MODE_1: return "MODE 1";
+        case GAME_MODE_2: return "MODE 2";
+        case GAME_MODE_3: return "MODE 3";
+        default:          return "MODE 1";
     }
 }
 
@@ -292,11 +269,14 @@ static const char *CAR_Code(car_type_t car)
 {
     switch (car)
     {
-    case CAR_V0: return "V0";
-    case CAR_V1: return "V1";
-    case CAR_V2: return "V2";
-    case CAR_V3: return "V3";
-    default:     return "V0";
+        case CAR_V0: return "V0";
+        case CAR_V1: return "V1";
+        case CAR_V2: return "V2";
+        case CAR_V3: return "V3";
+        case CAR_V4: return "V4";
+        case CAR_V5: return "V5";
+        case CAR_V6: return "V6";
+        default:     return "V0";
     }
 }
 
@@ -304,11 +284,25 @@ static const char *CAR_Label(car_type_t car)
 {
     switch (car)
     {
-    case CAR_V0: return "STANDARD";
-    case CAR_V1: return "AUTO FIRE";
-    case CAR_V2: return "RAPID SHOT";
-    case CAR_V3: return "HEAVY SHOT";
-    default:     return "STANDARD";
+        case CAR_V0: return "STANDARD";
+        case CAR_V1: return "AUTO FIRE";
+        case CAR_V2: return "RAPID SHOT";
+        case CAR_V3: return "MOVING CAST";
+        case CAR_V4: return "FORWARD SPEED";
+        case CAR_V5: return "LONG BEAM";
+        case CAR_V6: return "GUN PLATFORM";
+        default:     return "STANDARD";
+    }
+}
+
+static uint32_t car_prime_ms(void)
+{
+    switch (selected_car)
+    {
+        case CAR_V4: return 800U;
+        case CAR_V5: return 1200U;
+        case CAR_V6: return 400U;
+        default:     return LASER_PRIME_MS;
     }
 }
 
@@ -316,8 +310,11 @@ static uint32_t car_fire_ms(void)
 {
     switch (selected_car)
     {
-    case CAR_V2: return 500U;
-    default:     return LASER_FIRE_MS;
+        case CAR_V2: return 500U;
+        case CAR_V4: return 400U;
+        case CAR_V5: return 1800U;
+        case CAR_V6: return 400U;
+        default:     return LASER_FIRE_MS;
     }
 }
 
@@ -325,16 +322,43 @@ static uint32_t car_cooldown_ms(void)
 {
     switch (selected_car)
     {
-    case CAR_V2: return LASER_COOLDOWN_MS / 2U;
-    case CAR_V3: return 6000U;
-    default:     return LASER_COOLDOWN_MS;
+        case CAR_V2: return 1500U;
+        case CAR_V3: return 6000U;
+        case CAR_V4: return 4000U;
+        case CAR_V5: return 5500U;
+        case CAR_V6: return 1800U;
+        default:     return LASER_COOLDOWN_MS;
     }
 }
 
-static uint8_t car_speed_cap(uint8_t speed)
+static uint8_t car_apply_speed_cap(char cmd, uint8_t speed_percent)
 {
-    if ((selected_car == CAR_V1) && (speed > 70U)) return 70U;
-    return speed;
+    uint16_t max_speed = 100U;
+    uint16_t scaled;
+
+    switch (selected_car)
+    {
+        case CAR_V1:
+            max_speed = 70U;
+            break;
+
+        case CAR_V4:
+            if ((cmd == 'F') || (cmd == 'L') || (cmd == 'R'))
+                max_speed = 200U;
+            break;
+
+        case CAR_V6:
+            max_speed = 60U;
+            break;
+
+        default:
+            max_speed = 100U;
+            break;
+    }
+
+    scaled = ((uint16_t)speed_percent * max_speed) / 100U;
+    if (scaled > 255U) scaled = 255U;
+    return (uint8_t)scaled;
 }
 
 static uint8_t car_allows_move_while_firing(void)
@@ -352,9 +376,13 @@ static uint8_t car_auto_fire_enabled(void)
     return (selected_car == CAR_V1) ? 1U : 0U;
 }
 
-static uint8_t car_has_turn_delay(void)
+static uint32_t car_turn_delay_ms(void)
 {
-    return (selected_car == CAR_V2) ? 1U : 0U;
+    switch (selected_car)
+    {
+        case CAR_V2: return 500U;
+        default:     return 200U;
+    }
 }
 
 static uint32_t read_adc1(void)
@@ -597,81 +625,83 @@ static void laser_on_press(void)
 static void laser_on_release(void)
 {
     if (laser_state != LASER_ARMED) return;
+
     laser_state = LASER_PRIMING;
-    laser_tick  = HAL_GetTick();
-    strcpy(laser_line, "PRIMING");
+    laser_tick = HAL_GetTick();
+    strcpy(laser_line, "CHARGING");
 }
 
 static void laser_update(void)
 {
-    uint32_t now         = HAL_GetTick();
-    uint32_t elapsed     = now - laser_tick;
-    uint32_t fire_ms     = car_fire_ms();
+    uint32_t now = HAL_GetTick();
+    uint32_t elapsed = now - laser_tick;
+    uint32_t prime_ms = car_prime_ms();
+    uint32_t fire_ms = car_fire_ms();
     uint32_t cooldown_ms = car_cooldown_ms();
 
     switch (laser_state)
     {
-    case LASER_IDLE:
-        strcpy(laser_line, "READY");
-        fire_cmd_priority = 0U;
-        break;
-
-    case LASER_ARMED:
-        strcpy(laser_line, "ARMED");
-        break;
-
-    case LASER_PRIMING:
-        if (elapsed >= LASER_PRIME_MS)
-        {
-            HAL_GPIO_WritePin(LASER_PORT, LASER_PIN, GPIO_PIN_SET);
-            laser_state = LASER_FIRING;
-            laser_tick  = now;
-            strcpy(laser_line, "FIRING");
-            Fire_SendCmd(1);
-        }
-        else
-        {
-            uint32_t rem = LASER_PRIME_MS - elapsed;
-            snprintf(laser_line, sizeof(laser_line), "PRIME:%lums", rem);
-        }
-        break;
-
-    case LASER_FIRING:
-        if (elapsed >= fire_ms)
-        {
-            HAL_GPIO_WritePin(LASER_PORT, LASER_PIN, GPIO_PIN_RESET);
-            Fire_SendCmd(0);
-            laser_state = LASER_COOLDOWN;
-            laser_tick  = now;
-            strcpy(laser_line, "COOLDOWN");
-            SEG_StartCooldownCountdown(cooldown_ms);
-        }
-        else
-        {
-            uint32_t rem = fire_ms - elapsed;
-            snprintf(laser_line, sizeof(laser_line), "FIRE:%lums", rem);
-        }
-        break;
-
-    case LASER_COOLDOWN:
-        if (elapsed >= cooldown_ms)
-        {
-            laser_state = LASER_IDLE;
+        case LASER_IDLE:
             strcpy(laser_line, "READY");
             fire_cmd_priority = 0U;
-        }
-        else
-        {
-            uint32_t rem = cooldown_ms - elapsed;
-            snprintf(laser_line, sizeof(laser_line), "CD:%lu.%lus",
-                     rem / 1000U, (rem % 1000U) / 100U);
-        }
-        break;
+            break;
 
-    default:
-        laser_state = LASER_IDLE;
-        fire_cmd_priority = 0U;
-        break;
+        case LASER_ARMED:
+            strcpy(laser_line, "ARMED");
+            break;
+
+        case LASER_PRIMING:
+            if (elapsed >= prime_ms)
+            {
+                HAL_GPIO_WritePin(LASER_PORT, LASER_PIN, GPIO_PIN_SET);
+                laser_state = LASER_FIRING;
+                laser_tick = now;
+                strcpy(laser_line, "FIRING");
+                Fire_SendCmd(1);
+            }
+            else
+            {
+                uint32_t rem = prime_ms - elapsed;
+                snprintf(laser_line, sizeof(laser_line), "CHG:%lums", rem);
+            }
+            break;
+
+        case LASER_FIRING:
+            if (elapsed >= fire_ms)
+            {
+                HAL_GPIO_WritePin(LASER_PORT, LASER_PIN, GPIO_PIN_RESET);
+                Fire_SendCmd(0);
+                laser_state = LASER_COOLDOWN;
+                laser_tick = now;
+                strcpy(laser_line, "COOLDOWN");
+                SEG_StartCooldownCountdown(cooldown_ms);
+            }
+            else
+            {
+                uint32_t rem = fire_ms - elapsed;
+                snprintf(laser_line, sizeof(laser_line), "FIRE:%lums", rem);
+            }
+            break;
+
+        case LASER_COOLDOWN:
+            if (elapsed >= cooldown_ms)
+            {
+                laser_state = LASER_IDLE;
+                strcpy(laser_line, "READY");
+                fire_cmd_priority = 0U;
+            }
+            else
+            {
+                uint32_t rem = cooldown_ms - elapsed;
+                snprintf(laser_line, sizeof(laser_line), "CD:%lu.%lus",
+                         rem / 1000U, (rem % 1000U) / 100U);
+            }
+            break;
+
+        default:
+            laser_state = LASER_IDLE;
+            fire_cmd_priority = 0U;
+            break;
     }
 
     if ((app_state == APP_GAME) &&
@@ -680,8 +710,8 @@ static void laser_update(void)
         (laser_state == LASER_IDLE))
     {
         laser_state = LASER_PRIMING;
-        laser_tick  = now;
-        strcpy(laser_line, "AUTO PRIME");
+        laser_tick = now;
+        strcpy(laser_line, "AUTO CHARGE");
     }
 }
 
@@ -689,78 +719,108 @@ static void RGB_Update_From_State(void)
 {
     switch (laser_state)
     {
-    case LASER_ARMED:    RGB_Set(0,0,1); break;
-    case LASER_PRIMING:  RGB_Set(0,1,0); break;
-    case LASER_FIRING:   RGB_Set(0,1,0); break;
-    case LASER_COOLDOWN: RGB_Set(1,0,0); break;
-    case LASER_IDLE:
-    default:             RGB_Set(1,1,1); break;
+        case LASER_ARMED:
+            RGB_Set(0, 0, 1);
+            break;
+
+        case LASER_PRIMING:
+            RGB_Set(1, 1, 0);
+            break;
+
+        case LASER_FIRING:
+            RGB_Set(0, 1, 0);
+            break;
+
+        case LASER_COOLDOWN:
+            RGB_Set(1, 0, 0);
+            break;
+
+        case LASER_IDLE:
+        default:
+            RGB_Set(1, 1, 1);
+            break;
     }
 }
 
 static void Drive_Task(uint32_t x_raw, uint32_t y_raw)
 {
     char cmd = 'S';
-    uint8_t speed = 0;
+    uint8_t speed_percent = 0U;
+    uint8_t speed_cmd = 0U;
     uint32_t now = HAL_GetTick();
+    uint32_t turn_delay = car_turn_delay_ms();
 
     if (!car_allows_move_while_firing() &&
         ((laser_state == LASER_PRIMING) || (laser_state == LASER_FIRING)))
     {
-        snprintf(motion_line, sizeof(motion_line), "LOCK  %3u%%", 0U);
+        snprintf(motion_line, sizeof(motion_line), "LOCK %3u%%", 0U);
         Motor_SendCmd('S', 0);
         current_dir_cmd = 'S';
+        turn_delay_active = 0U;
+        turn_target_cmd = 'S';
         return;
     }
 
     if (y_raw < Y_FWD_THRESH_ADC)
     {
         cmd = 'F';
-        speed = map_range_percent(y_raw, Y_FWD_THRESH_ADC, ADC_MIN);
-        speed = car_speed_cap(speed);
-        snprintf(motion_line, sizeof(motion_line), "FRONT %3u%%", speed);
+        speed_percent = map_range_percent(y_raw, Y_FWD_THRESH_ADC, ADC_MIN);
     }
     else if (x_raw < X_LEFT_THRESH_ADC)
     {
         cmd = 'L';
-        speed = map_range_percent(x_raw, X_LEFT_THRESH_ADC, ADC_MIN);
-        speed = car_speed_cap(speed);
-        snprintf(motion_line, sizeof(motion_line), "LEFT  %3u%%", speed);
+        speed_percent = map_range_percent(x_raw, X_LEFT_THRESH_ADC, ADC_MIN);
     }
     else if (x_raw > X_RIGHT_THRESH_ADC)
     {
         cmd = 'R';
-        speed = map_range_percent(x_raw, X_RIGHT_THRESH_ADC, ADC_MAX);
-        speed = car_speed_cap(speed);
-        snprintf(motion_line, sizeof(motion_line), "RIGHT %3u%%", speed);
+        speed_percent = map_range_percent(x_raw, X_RIGHT_THRESH_ADC, ADC_MAX);
     }
     else
     {
         cmd = 'S';
-        speed = 0;
-        snprintf(motion_line, sizeof(motion_line), "STOP  %3u%%", speed);
+        speed_percent = 0U;
     }
 
-    if (car_has_turn_delay() &&
-        (current_dir_cmd != 'S') &&
-        (cmd != 'S') &&
-        (cmd != current_dir_cmd))
+    speed_cmd = car_apply_speed_cap(cmd, speed_percent);
+
+    if ((current_dir_cmd != 'S') && (cmd != 'S') && (cmd != current_dir_cmd))
     {
-        if ((now - last_direction_change_tick) < 500U)
+        if (!turn_delay_active)
         {
-            snprintf(motion_line, sizeof(motion_line), "DELAY %3u%%", 0U);
+            turn_delay_active = 1U;
+            turn_target_cmd = cmd;
+            last_direction_change_tick = now;
+        }
+    }
+
+    if (turn_delay_active)
+    {
+        if ((now - last_direction_change_tick) < turn_delay)
+        {
+            snprintf(motion_line, sizeof(motion_line), "DELAY %3lums", turn_delay);
             Motor_SendCmd('S', 0);
             return;
         }
-        last_direction_change_tick = now;
+        else
+        {
+            turn_delay_active = 0U;
+            cmd = turn_target_cmd;
+            speed_cmd = car_apply_speed_cap(cmd, speed_percent);
+        }
     }
 
-    if (cmd != current_dir_cmd)
-    {
-        current_dir_cmd = cmd;
-    }
+    if (cmd == 'F')
+        snprintf(motion_line, sizeof(motion_line), "FRONT %3u", speed_cmd);
+    else if (cmd == 'L')
+        snprintf(motion_line, sizeof(motion_line), "LEFT  %3u", speed_cmd);
+    else if (cmd == 'R')
+        snprintf(motion_line, sizeof(motion_line), "RIGHT %3u", speed_cmd);
+    else
+        snprintf(motion_line, sizeof(motion_line), "STOP  %3u", 0U);
 
-    Motor_SendCmd(cmd, speed);
+    current_dir_cmd = cmd;
+    Motor_SendCmd(cmd, speed_cmd);
 }
 
 static void LCD_ClearTextField(uint16_t x, uint16_t y, uint16_t chars, uint16_t bg)
@@ -809,50 +869,68 @@ static void LCD_DrawCarSelect(void)
     LCD_Clear(0, 0, 240, 320, UI_BG);
 
     LCD_Clear(0, 0, 240, 6, UI_HEAD);
-    LCD_TEXT(10, 12, "SELECT CAR");
-    LCD_TEXT(10, 32, "K1:NEXT   K2:START");
+    LCD_TEXT(10, 10, "SELECT CAR");
+    LCD_TEXT(10, 28, "K1:NEXT K2:START");
 
     snprintf(line, sizeof(line), "MODE:%s", MODE_Name(selected_mode));
-    LCD_TEXT(10, 52, line);
+    LCD_TEXT(10, 46, line);
 
-    LCD_Clear(20, 80, 200, 34, (selected_car == CAR_V0) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(30, 89, "V0  STANDARD");
+    LCD_Clear(14,  64, 212, 20, (selected_car == CAR_V0) ? UI_BOX_SEL : UI_BOX_NSEL);
+    LCD_TEXT(20, 68, "V0 STANDARD");
 
-    LCD_Clear(20, 120, 200, 34, (selected_car == CAR_V1) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(30, 129, "V1  AUTO FIRE");
+    LCD_Clear(14,  88, 212, 20, (selected_car == CAR_V1) ? UI_BOX_SEL : UI_BOX_NSEL);
+    LCD_TEXT(20, 92, "V1 AUTO FIRE");
 
-    LCD_Clear(20, 160, 200, 34, (selected_car == CAR_V2) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(30, 169, "V2  RAPID SHOT");
+    LCD_Clear(14, 112, 212, 20, (selected_car == CAR_V2) ? UI_BOX_SEL : UI_BOX_NSEL);
+    LCD_TEXT(20, 116, "V2 RAPID SHOT");
 
-    LCD_Clear(20, 200, 200, 34, (selected_car == CAR_V3) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(30, 209, "V3  HEAVY SHOT");
+    LCD_Clear(14, 136, 212, 20, (selected_car == CAR_V3) ? UI_BOX_SEL : UI_BOX_NSEL);
+    LCD_TEXT(20, 140, "V3 MOVING CAST");
 
-    LCD_Clear(0, 250, 240, 70, UI_BOTTOM);
-    LCD_TEXT(10, 260, "CAR:");
-    LCD_TEXT(60, 260, (char *)CAR_Code(selected_car));
-    LCD_TEXT(10, 280, "TYPE:");
-    LCD_TEXT(60, 280, (char *)CAR_Label(selected_car));
+    LCD_Clear(14, 160, 212, 20, (selected_car == CAR_V4) ? UI_BOX_SEL : UI_BOX_NSEL);
+    LCD_TEXT(20, 164, "V4 FORWARD SPD");
+
+    LCD_Clear(14, 184, 212, 20, (selected_car == CAR_V5) ? UI_BOX_SEL : UI_BOX_NSEL);
+    LCD_TEXT(20, 188, "V5 LONG BEAM");
+
+    LCD_Clear(14, 208, 212, 20, (selected_car == CAR_V6) ? UI_BOX_SEL : UI_BOX_NSEL);
+    LCD_TEXT(20, 212, "V6 GUN PLATFORM");
+
+    LCD_Clear(0, 246, 240, 74, UI_BOTTOM);
+    LCD_TEXT(10, 256, "CAR:");
+    LCD_TEXT(60, 256, (char *)CAR_Code(selected_car));
+    LCD_TEXT(10, 278, "TYPE:");
+    LCD_TEXT(60, 278, (char *)CAR_Label(selected_car));
 }
 
 static void LCD_UpdateCarSelection(void)
 {
-    LCD_Clear(20, 80, 200, 34, (selected_car == CAR_V0) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(30, 89, "V0  STANDARD");
+    LCD_Clear(14,  64, 212, 20, (selected_car == CAR_V0) ? UI_BOX_SEL : UI_BOX_NSEL);
+    LCD_TEXT(20, 68, "V0 STANDARD");
 
-    LCD_Clear(20, 120, 200, 34, (selected_car == CAR_V1) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(30, 129, "V1  AUTO FIRE");
+    LCD_Clear(14,  88, 212, 20, (selected_car == CAR_V1) ? UI_BOX_SEL : UI_BOX_NSEL);
+    LCD_TEXT(20, 92, "V1 AUTO FIRE");
 
-    LCD_Clear(20, 160, 200, 34, (selected_car == CAR_V2) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(30, 169, "V2  RAPID SHOT");
+    LCD_Clear(14, 112, 212, 20, (selected_car == CAR_V2) ? UI_BOX_SEL : UI_BOX_NSEL);
+    LCD_TEXT(20, 116, "V2 RAPID SHOT");
 
-    LCD_Clear(20, 200, 200, 34, (selected_car == CAR_V3) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(30, 209, "V3  HEAVY SHOT");
+    LCD_Clear(14, 136, 212, 20, (selected_car == CAR_V3) ? UI_BOX_SEL : UI_BOX_NSEL);
+    LCD_TEXT(20, 140, "V3 MOVING CAST");
 
-    LCD_ClearTextField(60, 260, 8, UI_BOTTOM);
-    LCD_TEXT(60, 260, (char *)CAR_Code(selected_car));
+    LCD_Clear(14, 160, 212, 20, (selected_car == CAR_V4) ? UI_BOX_SEL : UI_BOX_NSEL);
+    LCD_TEXT(20, 164, "V4 FORWARD SPD");
 
-    LCD_ClearTextField(60, 280, 20, UI_BOTTOM);
-    LCD_TEXT(60, 280, (char *)CAR_Label(selected_car));
+    LCD_Clear(14, 184, 212, 20, (selected_car == CAR_V5) ? UI_BOX_SEL : UI_BOX_NSEL);
+    LCD_TEXT(20, 188, "V5 LONG BEAM");
+
+    LCD_Clear(14, 208, 212, 20, (selected_car == CAR_V6) ? UI_BOX_SEL : UI_BOX_NSEL);
+    LCD_TEXT(20, 212, "V6 GUN PLATFORM");
+
+    LCD_ClearTextField(60, 256, 8, UI_BOTTOM);
+    LCD_TEXT(60, 256, (char *)CAR_Code(selected_car));
+
+    LCD_ClearTextField(60, 278, 20, UI_BOTTOM);
+    LCD_TEXT(60, 278, (char *)CAR_Label(selected_car));
 }
 
 static void LCD_DrawGameLayout(void)
@@ -911,8 +989,13 @@ static void LCD_UpdateGameFast(uint32_t x_raw, uint32_t y_raw)
             speed = 0;
         }
 
-        speed = car_speed_cap(speed);
-        snprintf(spd_str, sizeof(spd_str), "%3u%%", speed);
+        speed = car_apply_speed_cap(
+            (dir_str[0] == 'F') ? 'F' :
+            (dir_str[0] == 'L') ? 'L' :
+            (dir_str[0] == 'R') ? 'R' : 'S',
+            speed
+        );
+        snprintf(spd_str, sizeof(spd_str), "%3u", speed);
     }
 
     LCD_ClearTextField(60, 10, 20, UI_BG);
@@ -1231,7 +1314,7 @@ int main(void)
 
             if (k1_click)
             {
-                selected_car = (car_type_t)(((uint8_t)selected_car + 1U) % 4U);
+                selected_car = (car_type_t)(((uint8_t)selected_car + 1U) % 7U);
             }
 
             if (k2_click)
