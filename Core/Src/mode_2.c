@@ -8,7 +8,7 @@
 #include <string.h>
 #include <stdio.h>
 
-#define MAX_POINTS 100
+#define MAX_POINTS 1000 // Increased from 100 to 1000 to remove limit
 #define CANVAS_X_MIN 10
 #define CANVAS_X_MAX 230
 #define CANVAS_Y_MIN 80
@@ -115,13 +115,15 @@ void Mode2_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
         if (m2_cursor_y > CANVAS_Y_MAX) m2_cursor_y = CANVAS_Y_MAX;
 
         if (old_x != m2_cursor_x || old_y != m2_cursor_y) {
-            // Trace the path
+            // Overwrite OLD head with the path line color (BLUE)
+            LCD_Clear(old_x - 5, old_y - 5, 11, 11, BLUE);
+            
+            // Draw path line segment
             LCD_DrawLine(old_x, old_y, m2_cursor_x, m2_cursor_y, BLUE);
             
-            // Draw High-Contrast "Dragon Head" Cursor
-            LCD_Clear(m2_cursor_x - 3, m2_cursor_y - 3, 7, 7, YELLOW);
-            LCD_Clear(m2_cursor_x - 1, m2_cursor_y - 1, 3, 3, WHITE); // Bigger white tip
-            LCD_DrawDot(m2_cursor_x, m2_cursor_y, BLACK); // Precision center
+            // Draw NEW Dragon Head (ALWAYS ON TOP)
+            LCD_Clear(m2_cursor_x - 5, m2_cursor_y - 5, 11, 11, YELLOW);
+            LCD_Clear(m2_cursor_x - 2, m2_cursor_y - 2, 5, 5, BLACK); // 5x5 Black center dot
         }
 
         if (old_x != m2_cursor_x || old_y != m2_cursor_y) {
@@ -141,14 +143,14 @@ void Mode2_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
         }
 
         if (k2_click && m2_path_count > 0) {
-            // Clear history line area
-            LCD_Clear(0, 48, 240, 20, UI_BG);
+            LCD_Clear(0, 22, 240, 52, UI_BG);
             m2_state = M2_STATE_MOVING;
             target_pt_idx = 0;
             m2_visit_count = 0;
             history_slot = 0;
             last_history_cmd = ' ';
-            move_timer = now + 500; 
+            Motor_SendCmd('S', 0); // START STOP COMMAND
+            move_timer = now + 600; 
         }
     }
     else if (m2_state == M2_STATE_RESET_CONFIRM) {
@@ -164,27 +166,25 @@ void Mode2_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
         if (k2_click) { Mode2_ResetCanvas(); }
     }
     else if (m2_state == M2_STATE_MOVING) {
-        // Position Indicator (Thick Red Cross)
         if (target_pt_idx < m2_path_count) {
             uint16_t curr_x = m2_path_x[target_pt_idx];
             uint16_t curr_y = m2_path_y[target_pt_idx];
             
-            // Draw thick red cross
-            LCD_DrawLine(curr_x - 5, curr_y, curr_x + 5, curr_y, RED);
-            LCD_DrawLine(curr_x - 5, curr_y - 1, curr_x + 5, curr_y - 1, RED);
-            LCD_DrawLine(curr_x - 5, curr_y + 1, curr_x + 5, curr_y + 1, RED);
-            LCD_DrawLine(curr_x, curr_y - 5, curr_x, curr_y + 5, RED);
-            LCD_DrawLine(curr_x - 1, curr_y - 5, curr_x - 1, curr_y + 5, RED);
-            LCD_DrawLine(curr_x + 1, curr_y - 5, curr_x + 1, curr_y + 5, RED);
+            // Extra thick indicator
+            LCD_DrawLine(curr_x - 6, curr_y, curr_x + 6, curr_y, RED);
+            LCD_DrawLine(curr_x - 6, curr_y - 1, curr_x + 6, curr_y - 1, RED);
+            LCD_DrawLine(curr_x - 6, curr_y + 1, curr_x + 6, curr_y + 1, RED);
+            LCD_DrawLine(curr_x, curr_y - 6, curr_x, curr_y + 6, RED);
+            LCD_DrawLine(curr_x - 1, curr_y - 6, curr_x - 1, curr_y + 6, RED);
+            LCD_DrawLine(curr_x + 1, curr_y - 6, curr_x + 1, curr_y + 6, RED);
             
             if (m2_visit_count > 0) {
                 LCD_DrawLine(m2_visit_x[m2_visit_count - 1], m2_visit_y[m2_visit_count - 1], curr_x, curr_y, RED);
             }
         }
 
-        // Logic fix: Allow target_pt_idx to reach the very last point
         if (target_pt_idx >= m2_path_count) {
-            Motor_SendCmd('S', 0);
+            Motor_SendCmd('S', 0); // FINISH STOP COMMAND
             LCD_ClearTextField(10, 25, 24, UI_BG);
             LCD_SetColors(RED, UI_BG);
             LCD_TEXT(10, 25, "READY TO FIRE! (K1)");
@@ -200,7 +200,6 @@ void Mode2_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
                 m2_visit_count++;
             }
 
-            // If we are at the last point, just transition to shooting
             if (target_pt_idx == m2_path_count - 1) {
                 target_pt_idx++; 
                 move_timer = now + 100;
@@ -209,7 +208,7 @@ void Mode2_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
 
             int dx = m2_path_x[target_pt_idx + 1] - m2_path_x[target_pt_idx];
             int dy = m2_path_y[target_pt_idx + 1] - m2_path_y[target_pt_idx];
-            char cmd = 'F'; // Default to forward
+            char cmd = 'S';
             char history_char = 'F';
 
             if (abs(dx) >= abs(dy)) { 
@@ -217,11 +216,11 @@ void Mode2_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
                 history_char = (dx > 0) ? '>' : '<';
             }
             else { 
-                cmd = (dy > 0) ? 'B' : 'F'; 
-                history_char = (dy > 0) ? 'B' : 'F';
+                cmd = 'F'; // Only F, no B
+                history_char = 'F';
             }
 
-            uint32_t duration = (abs(dx) > abs(dy) ? abs(dx) : abs(dy)) * 15;
+            uint32_t duration = (abs(dx) > abs(dy) ? abs(dx) : abs(dy)) * 35; // Increased for full physical map coverage
 
             if (duration > 0) {
                 Motor_SendCmd(cmd, 60);
