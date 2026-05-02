@@ -4,7 +4,7 @@
   * @file           : main.c
   * @brief          : Joystick + laser + RGB LED + LCD + UART motor commands
   *                   Motor control via ESP-01S over USART3
-  *                   LCD updated to clean text-only layout + PA2/PA3 buttons
+  *                   LCD updated to clean text-only layout
   ******************************************************************************
   */
 /* USER CODE END Header */
@@ -18,20 +18,6 @@
 /* USER CODE END Includes */
 
 /* USER CODE BEGIN PTD */
-typedef enum {
-    WIFI_STATE_IDLE = 0,
-    WIFI_STATE_SEND_AT,
-    WIFI_STATE_WAIT_AT,
-    WIFI_STATE_SEND_CWMODE,
-    WIFI_STATE_WAIT_CWMODE,
-    WIFI_STATE_SEND_CWJAP,
-    WIFI_STATE_WAIT_CWJAP,
-    WIFI_STATE_SEND_CIFSR,
-    WIFI_STATE_WAIT_CIFSR,
-    WIFI_STATE_DONE,
-    WIFI_STATE_FAIL
-} wifi_state_t;
-
 typedef enum {
     LASER_IDLE = 0,
     LASER_ARMED,
@@ -50,9 +36,6 @@ typedef enum {
 /* USER CODE END PTD */
 
 /* USER CODE BEGIN PD */
-#define WIFI_SSID           "ESP_2F0F28"
-#define WIFI_PASS           "thereisnospoon"
-
 #define LASER_PIN           GPIO_PIN_4
 #define LASER_PORT          GPIOC
 #define LASER_PRIME_MS      1000U
@@ -67,11 +50,6 @@ typedef enum {
 
 #define JOY_SW_PIN          GPIO_PIN_2
 #define JOY_SW_PORT         GPIOC
-
-#define BTN1_PIN            GPIO_PIN_2
-#define BTN1_PORT           GPIOA
-#define BTN2_PIN            GPIO_PIN_3
-#define BTN2_PORT           GPIOA
 
 #define RGB_R_PIN           GPIO_PIN_5
 #define RGB_R_PORT          GPIOB
@@ -110,8 +88,6 @@ typedef enum {
 #define LSEG_F_PORT         GPIOB
 #define LSEG_G_PIN          GPIO_PIN_6
 #define LSEG_G_PORT         GPIOB
-#define LSEG_DP_PIN         GPIO_PIN_7
-#define LSEG_DP_PORT        GPIOE
 
 #define RSEG_A_PIN          GPIO_PIN_14
 #define RSEG_A_PORT         GPIOB
@@ -142,9 +118,6 @@ GPIO_PinState last_k1_state  = GPIO_PIN_RESET;
 GPIO_PinState last_k2_state  = GPIO_PIN_RESET;
 GPIO_PinState last_jsw_state = GPIO_PIN_SET;
 
-uint32_t last_jsw_press_tick  = 0;
-uint8_t  jsw_has_been_pressed = 0;
-
 laser_state_t laser_state = LASER_IDLE;
 uint32_t      laser_tick  = 0;
 char          laser_line[32] = "READY";
@@ -159,23 +132,16 @@ uint8_t esp_rx_byte;
 volatile uint16_t esp_rx_index = 0;
 volatile uint8_t  esp_rx_done  = 0;
 
-char    esp_cmd_rx[8] = "S000";
-uint8_t fire_cmd_priority = 0;
+char esp_cmd_rx[8] = "S";
 
-wifi_state_t wifi_state      = WIFI_STATE_IDLE;
-uint32_t     wifi_state_tick = 0;
 char wifi_line1[32] = "idle";
 char wifi_line2[32] = "none";
-
-int32_t  ds18b20_raw       = -2032;
-uint32_t ds18b20_last_tick = 0;
 
 seg_mode_t seg_mode = SEG_IDLE;
 uint32_t seg_tick = 0;
 int seg_tenths = 0;
 uint8_t seg_left = 0;
 uint8_t seg_right = 0;
-uint8_t seg_dp = 0;
 
 uint32_t lcd_fast_tick = 0;
 uint32_t lcd_slow_tick = 0;
@@ -193,7 +159,6 @@ static uint32_t read_adc1(void);
 static uint32_t read_adc2(void);
 static void     RGB_Set(uint8_t r, uint8_t g, uint8_t b);
 static void     Motor_SendCmd(char cmd, uint8_t speed);
-static void     Fire_SendCmd(uint8_t fire_on);
 static uint8_t  map_range_percent(uint32_t value, uint32_t start, uint32_t end);
 static void     Drive_Task(uint32_t x_raw, uint32_t y_raw);
 static void     laser_on_press(void);
@@ -202,20 +167,13 @@ static void     laser_update(void);
 static void     RGB_Update_From_State(void);
 static void     LCD_DrawStaticLayout(void);
 static void     LCD_UpdateFast(uint32_t x_raw, uint32_t y_raw);
-static void     LCD_UpdateSlow(GPIO_PinState jsw_now, int32_t temp_raw, GPIO_PinState k1_now, GPIO_PinState k2_now);
+static void     LCD_UpdateSlow(GPIO_PinState jsw_now);
 static void     LCD_ClearTextField(uint16_t usC, uint16_t usP, uint16_t chars);
-static void     ds_pin_out(void);
-static void     ds_pin_in(void);
-static void     ds_delay_us(uint16_t us);
-static uint8_t  ds_start(void);
-static void     ds_write(uint8_t data);
-static uint8_t  ds_read_byte(void);
-static int32_t  DS18B20_ReadRaw(void);
 static void     SEG_WritePin(GPIO_TypeDef *port, uint16_t pin, uint8_t on);
 static void     SEG_AllOff(void);
-static void     SEG_ShowLeft(uint8_t d, uint8_t dp);
+static void     SEG_ShowLeft(uint8_t d);
 static void     SEG_ShowRight(uint8_t d);
-static void     SEG_ShowPair(uint8_t left, uint8_t right, uint8_t dp);
+static void     SEG_ShowPair(uint8_t left, uint8_t right);
 static void     SEG_ShowTenths(int t);
 static void     SEG_StartK1Countdown(void);
 static void     SEG_StartK2Show88(void);
@@ -291,7 +249,6 @@ static void SEG_AllOff(void)
     SEG_WritePin(LSEG_E_PORT, LSEG_E_PIN, 0);
     SEG_WritePin(LSEG_F_PORT, LSEG_F_PIN, 0);
     SEG_WritePin(LSEG_G_PORT, LSEG_G_PIN, 0);
-    SEG_WritePin(LSEG_DP_PORT, LSEG_DP_PIN, 0);
 
     SEG_WritePin(RSEG_A_PORT, RSEG_A_PIN, 0);
     SEG_WritePin(RSEG_B_PORT, RSEG_B_PIN, 0);
@@ -302,7 +259,7 @@ static void SEG_AllOff(void)
     SEG_WritePin(RSEG_G_PORT, RSEG_G_PIN, 0);
 }
 
-static void SEG_ShowLeft(uint8_t d, uint8_t dp)
+static void SEG_ShowLeft(uint8_t d)
 {
     static const uint8_t lut[10][7] = {
         {1,1,1,1,1,1,0},
@@ -326,7 +283,6 @@ static void SEG_ShowLeft(uint8_t d, uint8_t dp)
     SEG_WritePin(LSEG_E_PORT, LSEG_E_PIN, lut[d][4]);
     SEG_WritePin(LSEG_F_PORT, LSEG_F_PIN, lut[d][5]);
     SEG_WritePin(LSEG_G_PORT, LSEG_G_PIN, lut[d][6]);
-    SEG_WritePin(LSEG_DP_PORT, LSEG_DP_PIN, dp ? 1 : 0);
 }
 
 static void SEG_ShowRight(uint8_t d)
@@ -355,12 +311,11 @@ static void SEG_ShowRight(uint8_t d)
     SEG_WritePin(RSEG_G_PORT, RSEG_G_PIN, lut[d][6]);
 }
 
-static void SEG_ShowPair(uint8_t left, uint8_t right, uint8_t dp)
+static void SEG_ShowPair(uint8_t left, uint8_t right)
 {
     seg_left = left;
     seg_right = right;
-    seg_dp = dp;
-    SEG_ShowLeft(left, dp);
+    SEG_ShowLeft(left);
     SEG_ShowRight(right);
 }
 
@@ -368,7 +323,7 @@ static void SEG_ShowTenths(int t)
 {
     if (t < 0) t = 0;
     if (t > 99) t = 99;
-    SEG_ShowPair((uint8_t)(t / 10), (uint8_t)(t % 10), 1);
+    SEG_ShowPair((uint8_t)(t / 10), (uint8_t)(t % 10));
 }
 
 static void SEG_StartK1Countdown(void)
@@ -383,7 +338,7 @@ static void SEG_StartK2Show88(void)
 {
     seg_mode = SEG_K2_SHOW88;
     seg_tick = HAL_GetTick();
-    SEG_ShowPair(8, 8, 0);
+    SEG_ShowPair(8, 8);
 }
 
 static void SEG_StartCooldownCountdown(void)
@@ -423,7 +378,7 @@ static void SEG_Task(void)
     case SEG_K2_SHOW88:
         if ((now - seg_tick) >= 1000U)
         {
-            SEG_ShowPair(0, 0, 0);
+            SEG_ShowPair(0, 0);
             seg_mode = SEG_IDLE;
         }
         break;
@@ -431,7 +386,7 @@ static void SEG_Task(void)
     case SEG_ZERO_HOLD:
         if ((now - seg_tick) >= 1000U)
         {
-            SEG_ShowPair(0, 0, 0);
+            SEG_ShowPair(0, 0);
             seg_mode = SEG_IDLE;
         }
         break;
@@ -455,27 +410,13 @@ static void Motor_SendCmd(char cmd, uint8_t speed)
     }
 
     snprintf(tx, sizeof(tx), "%c%03u", cmd, speed);
-
-    if (!fire_cmd_priority)
-    {
-        snprintf(esp_cmd_rx, sizeof(esp_cmd_rx), "%s", tx);
-    }
-
+    esp_cmd_rx[0] = cmd;
+    esp_cmd_rx[1] = '\0';
     sendAT(tx);
 
     last_motor_cmd = cmd;
     last_motor_speed = speed;
     motor_cmd_tick = now;
-}
-
-static void Fire_SendCmd(uint8_t fire_on)
-{
-    char tx[8];
-
-    fire_cmd_priority = 1U;
-    snprintf(tx, sizeof(tx), "T%03u", fire_on ? 1U : 0U);
-    snprintf(esp_cmd_rx, sizeof(esp_cmd_rx), "%s", tx);
-    sendAT(tx);
 }
 
 static void laser_on_press(void)
@@ -502,7 +443,6 @@ static void laser_update(void)
     {
     case LASER_IDLE:
         strcpy(laser_line, "READY");
-        fire_cmd_priority = 0U;
         break;
 
     case LASER_ARMED:
@@ -516,7 +456,6 @@ static void laser_update(void)
             laser_state = LASER_FIRING;
             laser_tick  = now;
             strcpy(laser_line, "FIRING");
-            Fire_SendCmd(1);
         }
         else
         {
@@ -529,7 +468,6 @@ static void laser_update(void)
         if (elapsed >= LASER_FIRE_MS)
         {
             HAL_GPIO_WritePin(LASER_PORT, LASER_PIN, GPIO_PIN_RESET);
-            Fire_SendCmd(0);
             laser_state = LASER_COOLDOWN;
             laser_tick  = now;
             strcpy(laser_line, "COOLDOWN");
@@ -547,7 +485,6 @@ static void laser_update(void)
         {
             laser_state = LASER_IDLE;
             strcpy(laser_line, "READY");
-            fire_cmd_priority = 0U;
         }
         else
         {
@@ -559,7 +496,6 @@ static void laser_update(void)
 
     default:
         laser_state = LASER_IDLE;
-        fire_cmd_priority = 0U;
         break;
     }
 }
@@ -628,8 +564,6 @@ static void LCD_DrawStaticLayout(void)
     LCD_TEXT(10, 140, "Motion:");
     LCD_TEXT(10, 160, "ESP:");
     LCD_TEXT(10, 190, "K1/K2 -> 7SEG");
-    LCD_TEXT(10, 210, "K1:");
-    LCD_TEXT(10, 230, "K2:");
 }
 
 void sendAT(const char *cmd)
@@ -658,100 +592,6 @@ void WifiSetUp(void)
     sendAT("AT+CIPMUX=1");
     sendAT("AT+CIPSERVER=1,80");
     readResponse();
-}
-
-static void ds_delay_us(uint16_t us)
-{
-    uint32_t n = (uint32_t)us * 18U;
-    while (n--) { __NOP(); }
-}
-
-static void ds_pin_out(void)
-{
-    GPIO_InitTypeDef g = {0};
-    g.Pin   = DS18B20_PIN;
-    g.Mode  = GPIO_MODE_OUTPUT_OD;
-    g.Pull  = GPIO_NOPULL;
-    g.Speed = GPIO_SPEED_FREQ_HIGH;
-    HAL_GPIO_Init(DS18B20_PORT, &g);
-}
-
-static void ds_pin_in(void)
-{
-    GPIO_InitTypeDef g = {0};
-    g.Pin  = DS18B20_PIN;
-    g.Mode = GPIO_MODE_INPUT;
-    g.Pull = GPIO_NOPULL;
-    HAL_GPIO_Init(DS18B20_PORT, &g);
-}
-
-static uint8_t ds_start(void)
-{
-    uint8_t present;
-    ds_pin_out();
-    HAL_GPIO_WritePin(DS18B20_PORT, DS18B20_PIN, GPIO_PIN_RESET);
-    ds_delay_us(500);
-    ds_pin_in();
-    ds_delay_us(70);
-    present = (HAL_GPIO_ReadPin(DS18B20_PORT, DS18B20_PIN) == GPIO_PIN_RESET) ? 1U : 0U;
-    ds_delay_us(430);
-    return present;
-}
-
-static void ds_write(uint8_t data)
-{
-    uint8_t i;
-    for (i = 0; i < 8U; i++)
-    {
-        ds_pin_out();
-        HAL_GPIO_WritePin(DS18B20_PORT, DS18B20_PIN, GPIO_PIN_RESET);
-        ds_delay_us(2);
-        if (data & 0x01U) ds_pin_in();
-        ds_delay_us(60);
-        ds_pin_in();
-        ds_delay_us(2);
-        data >>= 1U;
-    }
-}
-
-static uint8_t ds_read_byte(void)
-{
-    uint8_t i, val = 0U;
-    for (i = 0; i < 8U; i++)
-    {
-        ds_pin_out();
-        HAL_GPIO_WritePin(DS18B20_PORT, DS18B20_PIN, GPIO_PIN_RESET);
-        ds_delay_us(2);
-        ds_pin_in();
-        ds_delay_us(10);
-        if (HAL_GPIO_ReadPin(DS18B20_PORT, DS18B20_PIN) == GPIO_PIN_SET)
-            val |= (uint8_t)(1U << i);
-        ds_delay_us(55);
-    }
-    return val;
-}
-
-static int32_t DS18B20_ReadRaw(void)
-{
-    uint8_t lo, hi;
-    int16_t raw;
-
-    if (!ds_start()) return -2032;
-    ds_write(0xCCU);
-    ds_write(0x44U);
-    HAL_Delay(750);
-
-    if (!ds_start()) return -2032;
-    ds_write(0xCCU);
-    ds_write(0xBEU);
-
-    lo = ds_read_byte();
-    hi = ds_read_byte();
-
-    raw = (int16_t)(((uint16_t)hi << 8) | lo);
-    if (raw == 0x0550) return -2032;
-
-    return (int32_t)raw;
 }
 
 static void LCD_UpdateFast(uint32_t x_raw, uint32_t y_raw)
@@ -796,24 +636,15 @@ static void LCD_UpdateFast(uint32_t x_raw, uint32_t y_raw)
     LCD_TEXT(70, 80, spd_str);
 }
 
-static void LCD_UpdateSlow(GPIO_PinState jsw_now, int32_t temp_raw, GPIO_PinState k1_now, GPIO_PinState k2_now)
+static void LCD_UpdateSlow(GPIO_PinState jsw_now)
 {
     char btn_str[16];
     char laser_disp[32];
     char motion_disp[24];
     char esp_disp[8];
-    char k1_str[16];
-    char k2_str[16];
-    (void)temp_raw;
 
     if (jsw_now == GPIO_PIN_RESET) strcpy(btn_str, "PRESSED");
     else                           strcpy(btn_str, "RELEASE");
-
-    if (k1_now == GPIO_PIN_SET) strcpy(k1_str, "PRESSED");
-    else                        strcpy(k1_str, "RELEASE");
-
-    if (k2_now == GPIO_PIN_SET) strcpy(k2_str, "PRESSED");
-    else                        strcpy(k2_str, "RELEASE");
 
     snprintf(laser_disp, sizeof(laser_disp), "%s", laser_line);
     snprintf(motion_disp, sizeof(motion_disp), "%s", motion_line);
@@ -828,14 +659,8 @@ static void LCD_UpdateSlow(GPIO_PinState jsw_now, int32_t temp_raw, GPIO_PinStat
     LCD_ClearTextField(70, 140, 20);
     LCD_TEXT(70, 140, motion_disp);
 
-    LCD_ClearTextField(50, 160, 8);
+    LCD_ClearTextField(50, 160, 6);
     LCD_TEXT(50, 160, esp_disp);
-
-    LCD_ClearTextField(40, 210, 12);
-    LCD_TEXT(40, 210, k1_str);
-
-    LCD_ClearTextField(40, 230, 12);
-    LCD_TEXT(40, 230, k2_str);
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
@@ -873,7 +698,7 @@ int main(void)
     HAL_GPIO_WritePin(LASER_PORT, LASER_PIN, GPIO_PIN_RESET);
     RGB_Set(1, 1, 1);
     SEG_AllOff();
-    SEG_ShowPair(0, 0, 0);
+    SEG_ShowPair(0, 0);
 
     LCD_INIT();
     LCD_DrawStaticLayout();
@@ -882,14 +707,12 @@ int main(void)
 
     while (1)
     {
-        uint32_t      now      = HAL_GetTick();
-        uint32_t      x_raw    = read_adc1();
-        uint32_t      y_raw    = read_adc2();
-        GPIO_PinState k1_now   = HAL_GPIO_ReadPin(K1_PORT, K1_PIN);
-        GPIO_PinState k2_now   = HAL_GPIO_ReadPin(K2_PORT, K2_PIN);
-        GPIO_PinState jsw_now  = HAL_GPIO_ReadPin(JOY_SW_PORT, JOY_SW_PIN);
-        GPIO_PinState btn1_now = HAL_GPIO_ReadPin(BTN1_PORT, BTN1_PIN);
-        GPIO_PinState btn2_now = HAL_GPIO_ReadPin(BTN2_PORT, BTN2_PIN);
+        uint32_t      now     = HAL_GetTick();
+        uint32_t      x_raw   = read_adc1();
+        uint32_t      y_raw   = read_adc2();
+        GPIO_PinState k1_now  = HAL_GPIO_ReadPin(K1_PORT, K1_PIN);
+        GPIO_PinState k2_now  = HAL_GPIO_ReadPin(K2_PORT, K2_PIN);
+        GPIO_PinState jsw_now = HAL_GPIO_ReadPin(JOY_SW_PORT, JOY_SW_PIN);
 
         if ((last_k1_state == GPIO_PIN_RESET) && (k1_now == GPIO_PIN_SET))
         {
@@ -912,8 +735,6 @@ int main(void)
             HAL_Delay(20);
             if (HAL_GPIO_ReadPin(JOY_SW_PORT, JOY_SW_PIN) == GPIO_PIN_RESET)
             {
-                last_jsw_press_tick  = HAL_GetTick();
-                jsw_has_been_pressed = 1U;
                 laser_on_press();
             }
         }
@@ -927,24 +748,8 @@ int main(void)
 
         last_jsw_state = jsw_now;
 
-        if (HAL_GetTick() - ds18b20_last_tick >= 2000U)
-        {
-            ds18b20_raw       = DS18B20_ReadRaw();
-            ds18b20_last_tick = HAL_GetTick();
-        }
-
         laser_update();
         RGB_Update_From_State();
-
-        if (btn1_now == GPIO_PIN_RESET)
-        {
-            RGB_Set(1, 0, 1);
-        }
-        else if (btn2_now == GPIO_PIN_RESET)
-        {
-            RGB_Set(1, 1, 0);
-        }
-
         SEG_Task();
         Drive_Task(x_raw, y_raw);
 
@@ -957,7 +762,7 @@ int main(void)
         if ((now - lcd_slow_tick) >= LCD_SLOW_UPDATE_MS)
         {
             lcd_slow_tick = now;
-            LCD_UpdateSlow(jsw_now, ds18b20_raw, k1_now, k2_now);
+            LCD_UpdateSlow(jsw_now);
         }
 
         HAL_Delay(10);
@@ -1108,11 +913,6 @@ static void MX_GPIO_Init(void)
     g.Mode = GPIO_MODE_INPUT;
     g.Pull = GPIO_PULLUP;
     HAL_GPIO_Init(JOY_SW_PORT, &g);
-
-    g.Pin  = BTN1_PIN | BTN2_PIN;
-    g.Mode = GPIO_MODE_INPUT;
-    g.Pull = GPIO_PULLUP;
-    HAL_GPIO_Init(BTN1_PORT, &g);
 
     g.Pin  = K1_PIN;
     g.Mode = GPIO_MODE_INPUT;

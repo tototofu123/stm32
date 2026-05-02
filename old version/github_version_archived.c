@@ -4,7 +4,7 @@
   * @file           : main.c
   * @brief          : Joystick + laser + RGB LED + LCD + UART motor commands
   *                   Motor control via ESP-01S over USART3
-  *                   LCD updated to clean text-only layout + PA2/PA3 buttons
+  *                   Commands shown on LCD: L / F / R / S
   ******************************************************************************
   */
 /* USER CODE END Header */
@@ -68,11 +68,6 @@ typedef enum {
 #define JOY_SW_PIN          GPIO_PIN_2
 #define JOY_SW_PORT         GPIOC
 
-#define BTN1_PIN            GPIO_PIN_2
-#define BTN1_PORT           GPIOA
-#define BTN2_PIN            GPIO_PIN_3
-#define BTN2_PORT           GPIOA
-
 #define RGB_R_PIN           GPIO_PIN_5
 #define RGB_R_PORT          GPIOB
 #define RGB_G_PIN           GPIO_PIN_0
@@ -94,8 +89,6 @@ typedef enum {
 #define LCD_FAST_UPDATE_MS  120U
 #define LCD_SLOW_UPDATE_MS  350U
 
-#define UI_BG               WHITE
-
 #define LSEG_A_PIN          GPIO_PIN_5
 #define LSEG_A_PORT         GPIOA
 #define LSEG_B_PIN          GPIO_PIN_6
@@ -110,8 +103,8 @@ typedef enum {
 #define LSEG_F_PORT         GPIOB
 #define LSEG_G_PIN          GPIO_PIN_6
 #define LSEG_G_PORT         GPIOB
-#define LSEG_DP_PIN         GPIO_PIN_7
-#define LSEG_DP_PORT        GPIOE
+#define LSEG_DP_PIN         GPIO_PIN_7 //placeholder
+#define LSEG_DP_PORT        GPIOE //placeholder
 
 #define RSEG_A_PIN          GPIO_PIN_14
 #define RSEG_A_PORT         GPIOB
@@ -127,9 +120,97 @@ typedef enum {
 #define RSEG_F_PORT         GPIOB
 #define RSEG_G_PIN          GPIO_PIN_12
 #define RSEG_G_PORT         GPIOB
-/* USER CODE END PD */
 
-#define LCD_TEXT(x, y, s)   LCD_DrawString((x), (y), (s))
+
+
+
+/* ================================================================
+
+
+
+#define LCD_CS_PIN       GPIO_PIN_7   // PD7  — FSMC_NE1  — Chip Select (active LOW)
+#define LCD_CS_PORT      GPIOD
+
+#define LCD_RS_PIN       GPIO_PIN_11  // PD11 — FSMC_A16  — Register Select (0=cmd, 1=data)
+#define LCD_RS_PORT      GPIOD
+
+#define LCD_WR_PIN       GPIO_PIN_5   // PD5  — FSMC_NWE  — Write strobe (active LOW)
+#define LCD_WR_PORT      GPIOD
+
+#define LCD_RD_PIN       GPIO_PIN_4   // PD4  — FSMC_NOE  — Read strobe  (active LOW)
+#define LCD_RD_PORT      GPIOD
+
+#define LCD_BL_PIN       GPIO_PIN_12  // PD12 — GPIO OUT  — Backlight (HIGH = on)
+#define LCD_BL_PORT      GPIOD
+
+#define LCD_RST_PIN      GPIO_PIN_1   // PE1  — GPIO OUT  — Reset (active LOW)
+#define LCD_RST_PORT     GPIOE
+
+// ── Data bus D0–D15 (16-bit)
+#define LCD_D0_PIN       GPIO_PIN_14  // PD14 — FSMC_D0
+#define LCD_D0_PORT      GPIOD
+
+#define LCD_D1_PIN       GPIO_PIN_15  // PD15 — FSMC_D1
+#define LCD_D1_PORT      GPIOD
+
+#define LCD_D2_PIN       GPIO_PIN_0   // PD0  — FSMC_D2
+#define LCD_D2_PORT      GPIOD
+
+#define LCD_D3_PIN       GPIO_PIN_1   // PD1  — FSMC_D3
+#define LCD_D3_PORT      GPIOD
+
+#define LCD_D4_PIN       GPIO_PIN_7   // PE7  — FSMC_D4
+#define LCD_D4_PORT      GPIOE
+
+#define LCD_D5_PIN       GPIO_PIN_8   // PE8  — FSMC_D5
+#define LCD_D5_PORT      GPIOE
+
+#define LCD_D6_PIN       GPIO_PIN_9   // PE9  — FSMC_D6
+#define LCD_D6_PORT      GPIOE
+
+#define LCD_D7_PIN       GPIO_PIN_10  // PE10 — FSMC_D7
+#define LCD_D7_PORT      GPIOE
+
+#define LCD_D8_PIN       GPIO_PIN_11  // PE11 — FSMC_D8
+#define LCD_D8_PORT      GPIOE
+
+#define LCD_D9_PIN       GPIO_PIN_12  // PE12 — FSMC_D9
+#define LCD_D9_PORT      GPIOE
+
+#define LCD_D10_PIN      GPIO_PIN_13  // PE13 — FSMC_D10
+#define LCD_D10_PORT     GPIOE
+
+#define LCD_D11_PIN      GPIO_PIN_14  // PE14 — FSMC_D11
+#define LCD_D11_PORT     GPIOE
+
+#define LCD_D12_PIN      GPIO_PIN_15  // PE15 — FSMC_D12
+#define LCD_D12_PORT     GPIOE
+
+#define LCD_D13_PIN      GPIO_PIN_8   // PD8  — FSMC_D13
+#define LCD_D13_PORT     GPIOD
+
+#define LCD_D14_PIN      GPIO_PIN_9   // PD9  — FSMC_D14
+#define LCD_D14_PORT     GPIOD
+
+#define LCD_D15_PIN      GPIO_PIN_10  // PD10 — FSMC_D15
+#define LCD_D15_PORT     GPIOD
+
+
+// PD3  — FSMC_CLK    — not used in async mode but reserved
+// PD6  — FSMC_NWAIT  — not used but reserved
+// PE0  — FSMC_NBL0   — byte lane 0, reserved
+// PE1  — FSMC_NBL1   — byte lane 1, doubles as RST above
+
+
+   QUICK REFERENCE — ports blocked by LCD
+   GPIOD: pins 0,1,4,5,6,7,8,9,10,11,12,14,15  → ALL TAKEN
+          only PD2, PD3, PD13 potentially free
+   GPIOE: pins 0,1,7,8,9,10,11,12,13,14,15     → ALL TAKEN
+          only PE2,PE3,PE4,PE5,PE6 free (K2-K4 buttons on PE2-4)
+   ================================================================ */
+
+
+/* USER CODE END PD */
 
 ADC_HandleTypeDef  hadc1;
 ADC_HandleTypeDef  hadc2;
@@ -159,16 +240,27 @@ uint8_t esp_rx_byte;
 volatile uint16_t esp_rx_index = 0;
 volatile uint8_t  esp_rx_done  = 0;
 
-char    esp_cmd_rx[8] = "S000";
-uint8_t fire_cmd_priority = 0;
+char esp_cmd_rx[8]   = "S";
+char prev_esp_cmd[8] = "";
 
 wifi_state_t wifi_state      = WIFI_STATE_IDLE;
 uint32_t     wifi_state_tick = 0;
-char wifi_line1[32] = "idle";
-char wifi_line2[32] = "none";
+char wifi_line1[32] = "WiFi:idle";
+char wifi_line2[32] = "IP:none";
 
 int32_t  ds18b20_raw       = -2032;
 uint32_t ds18b20_last_tick = 0;
+
+char prev_wifi1[32]  = "";
+char prev_wifi2[32]  = "";
+char prev_x[24]      = "";
+char prev_y[24]      = "";
+char prev_btn[8]     = "";
+char prev_last[24]   = "";
+char prev_laser[24]  = "";
+char prev_temp[24]   = "";
+char prev_motion[24] = "";
+char prev_seg[16]    = "";
 
 seg_mode_t seg_mode = SEG_IDLE;
 uint32_t seg_tick = 0;
@@ -193,17 +285,19 @@ static uint32_t read_adc1(void);
 static uint32_t read_adc2(void);
 static void     RGB_Set(uint8_t r, uint8_t g, uint8_t b);
 static void     Motor_SendCmd(char cmd, uint8_t speed);
-static void     Fire_SendCmd(uint8_t fire_on);
 static uint8_t  map_range_percent(uint32_t value, uint32_t start, uint32_t end);
 static void     Drive_Task(uint32_t x_raw, uint32_t y_raw);
 static void     laser_on_press(void);
 static void     laser_on_release(void);
 static void     laser_update(void);
 static void     RGB_Update_From_State(void);
-static void     LCD_DrawStaticLayout(void);
+static void     ESP_Send(const char *cmd);
+static void     ESP_ClearBuffer(void);
+static void     ESP_StartReceiveIT(void);
+static void     WiFi_Start(void);
+static void     WiFi_Task(void);
 static void     LCD_UpdateFast(uint32_t x_raw, uint32_t y_raw);
-static void     LCD_UpdateSlow(GPIO_PinState jsw_now, int32_t temp_raw, GPIO_PinState k1_now, GPIO_PinState k2_now);
-static void     LCD_ClearTextField(uint16_t usC, uint16_t usP, uint16_t chars);
+static void     LCD_UpdateSlow(GPIO_PinState jsw_now, int32_t temp_raw);
 static void     ds_pin_out(void);
 static void     ds_pin_in(void);
 static void     ds_delay_us(uint16_t us);
@@ -211,21 +305,26 @@ static uint8_t  ds_start(void);
 static void     ds_write(uint8_t data);
 static uint8_t  ds_read_byte(void);
 static int32_t  DS18B20_ReadRaw(void);
-static void     SEG_WritePin(GPIO_TypeDef *port, uint16_t pin, uint8_t on);
-static void     SEG_AllOff(void);
-static void     SEG_ShowLeft(uint8_t d, uint8_t dp);
-static void     SEG_ShowRight(uint8_t d);
-static void     SEG_ShowPair(uint8_t left, uint8_t right, uint8_t dp);
-static void     SEG_ShowTenths(int t);
-static void     SEG_StartK1Countdown(void);
-static void     SEG_StartK2Show88(void);
-static void     SEG_StartCooldownCountdown(void);
-static void     SEG_Task(void);
-void sendAT(const char *cmd);
-void readResponse(void);
-void WifiSetUp(void);
+
+static void SEG_WritePin(GPIO_TypeDef *port, uint16_t pin, uint8_t on);
+static void SEG_AllOff(void);
+static void SEG_ShowLeft(uint8_t d, uint8_t dp);
+static void SEG_ShowRight(uint8_t d);
+static void SEG_ShowPair(uint8_t left, uint8_t right, uint8_t dp);
+static void SEG_ShowTenths(int t);
+static void SEG_StartK1Countdown(void);
+static void SEG_StartK2Show88(void);
+static void SEG_StartCooldownCountdown(void);
+static void SEG_Task(void);
+
+static void LCD_DrawStringS(uint16_t x, uint16_t y, const char *s);
 
 /* USER CODE BEGIN 0 */
+static void LCD_DrawStringS(uint16_t x, uint16_t y, const char *s)
+{
+    LCD_DrawString(x, y, (uint8_t *)s);
+}
+
 static uint32_t read_adc1(void)
 {
     HAL_ADC_Start(&hadc1);
@@ -454,28 +553,15 @@ static void Motor_SendCmd(char cmd, uint8_t speed)
         return;
     }
 
-    snprintf(tx, sizeof(tx), "%c%03u", cmd, speed);
-
-    if (!fire_cmd_priority)
-    {
-        snprintf(esp_cmd_rx, sizeof(esp_cmd_rx), "%s", tx);
-    }
-
-    sendAT(tx);
+    snprintf(tx, sizeof(tx), "%c%03u\n", cmd, speed);
+    sendAT(cmd);
 
     last_motor_cmd = cmd;
     last_motor_speed = speed;
     motor_cmd_tick = now;
-}
 
-static void Fire_SendCmd(uint8_t fire_on)
-{
-    char tx[8];
-
-    fire_cmd_priority = 1U;
-    snprintf(tx, sizeof(tx), "T%03u", fire_on ? 1U : 0U);
-    snprintf(esp_cmd_rx, sizeof(esp_cmd_rx), "%s", tx);
-    sendAT(tx);
+    esp_cmd_rx[0] = cmd;
+    esp_cmd_rx[1] = '\0';
 }
 
 static void laser_on_press(void)
@@ -502,7 +588,6 @@ static void laser_update(void)
     {
     case LASER_IDLE:
         strcpy(laser_line, "READY");
-        fire_cmd_priority = 0U;
         break;
 
     case LASER_ARMED:
@@ -516,7 +601,6 @@ static void laser_update(void)
             laser_state = LASER_FIRING;
             laser_tick  = now;
             strcpy(laser_line, "FIRING");
-            Fire_SendCmd(1);
         }
         else
         {
@@ -529,7 +613,6 @@ static void laser_update(void)
         if (elapsed >= LASER_FIRE_MS)
         {
             HAL_GPIO_WritePin(LASER_PORT, LASER_PIN, GPIO_PIN_RESET);
-            Fire_SendCmd(0);
             laser_state = LASER_COOLDOWN;
             laser_tick  = now;
             strcpy(laser_line, "COOLDOWN");
@@ -547,7 +630,6 @@ static void laser_update(void)
         {
             laser_state = LASER_IDLE;
             strcpy(laser_line, "READY");
-            fire_cmd_priority = 0U;
         }
         else
         {
@@ -559,7 +641,6 @@ static void laser_update(void)
 
     default:
         laser_state = LASER_IDLE;
-        fire_cmd_priority = 0U;
         break;
     }
 }
@@ -610,55 +691,46 @@ static void Drive_Task(uint32_t x_raw, uint32_t y_raw)
     Motor_SendCmd(cmd, speed);
 }
 
-static void LCD_ClearTextField(uint16_t usC, uint16_t usP, uint16_t chars)
-{
-    LCD_Clear(usC, usP, chars * WIDTH_EN_CHAR, HEIGHT_EN_CHAR, UI_BG);
-}
-
-static void LCD_DrawStaticLayout(void)
-{
-    LCD_Clear(0, 0, 240, 320, UI_BG);
-
-    LCD_TEXT(10, 10,  "WiFi:");
-    LCD_TEXT(10, 30,  "IP:");
-    LCD_TEXT(10, 60,  "Direction:");
-    LCD_TEXT(10, 80,  "Speed:");
-    LCD_TEXT(10, 100, "Button:");
-    LCD_TEXT(10, 120, "Laser:");
-    LCD_TEXT(10, 140, "Motion:");
-    LCD_TEXT(10, 160, "ESP:");
-    LCD_TEXT(10, 190, "K1/K2 -> 7SEG");
-    LCD_TEXT(10, 210, "K1:");
-    LCD_TEXT(10, 230, "K2:");
-}
-
-void sendAT(const char *cmd)
-{
+void sendAT(const char *cmd) {
     HAL_UART_Transmit(&huart3, (uint8_t*)cmd, strlen(cmd), HAL_MAX_DELAY);
     HAL_UART_Transmit(&huart3, (uint8_t*)"\r\n", 2, HAL_MAX_DELAY);
-    HAL_Delay(20);
+    HAL_Delay(500);
 }
 
-void readResponse(void)
-{
+void readResponse(void) {
     char buffer[128] = {0};
     HAL_UART_Receive(&huart3, (uint8_t*)buffer, sizeof(buffer)-1, 1000);
-    if (strstr(buffer, "Hello from ESP01s client!") != NULL)
-    {
-        snprintf(wifi_line1, sizeof(wifi_line1), "connect");
+    if (strlen(buffer) > 0){
+    	if (buffer == "Hello from ESP01s client!"){
+    		snprintf(wifi_line1, sizeof(wifi_line1), "WiFi:connect");
+    	}
     }
 }
 
-void WifiSetUp(void)
-{
-    sendAT("AT");
-    sendAT("AT+CWMODE=2");
-    sendAT("AT+CWSAP=\"ESP8266_AP_01\",\"12345678\",5,3");
-    sendAT("AT+CIFSR");
-    sendAT("AT+CIPMUX=1");
-    sendAT("AT+CIPSERVER=1,80");
-    readResponse();
+void WifiSetUp(void){
+	// 1. Test AT
+	     sendAT("AT");
+	     //readResponse();
+
+
+	     // 2. Set AP mode
+	     sendAT("AT+CWMODE=2");
+	    // readResponse();
+
+	     // 3. Configure AP SSID/password
+	     sendAT("AT+CWSAP=\"ESP8266_AP_01\",\"12345678\",5,3");
+	     //readResponse();
+
+	     // Check AP IP
+	     sendAT("AT+CIFSR");
+	    // readResponse();
+
+	     // 4. Start TCP server
+	     sendAT("AT+CIPMUX=1");
+	     sendAT("AT+CIPSERVER=1,80");
+	     readResponse();
 }
+
 
 static void ds_delay_us(uint16_t us)
 {
@@ -756,86 +828,76 @@ static int32_t DS18B20_ReadRaw(void)
 
 static void LCD_UpdateFast(uint32_t x_raw, uint32_t y_raw)
 {
-    char dir_str[16];
-    char spd_str[16];
-    uint8_t speed = 0;
+    char x_str[24], y_str[24];
+    uint32_t xcV = (x_raw * 330U) / 4095U;
+    uint32_t ycV = (y_raw * 330U) / 4095U;
 
-    if (y_raw < Y_FWD_THRESH_ADC)
-    {
-        strcpy(dir_str, "FORWARD");
-        speed = map_range_percent(y_raw, Y_FWD_THRESH_ADC, ADC_MIN);
+    snprintf(x_str, sizeof(x_str), "%4lu %lu.%02luV", x_raw, xcV / 100U, xcV % 100U);
+    snprintf(y_str, sizeof(y_str), "%4lu %lu.%02luV", y_raw, ycV / 100U, ycV % 100U);
+
+#define LCD_IF_CHANGED_FAST(prev, cur, x1, y1, x2, y2) \
+    if (strcmp((prev), (cur)) != 0) { \
+        LCD_Clear((x1), (y1), (x2), (y2), WHITE); \
+        LCD_DrawStringS((x1), (y1), (cur)); \
+        strcpy((prev), (cur)); \
     }
-    else if (x_raw < X_LEFT_THRESH_ADC)
+
+    LCD_IF_CHANGED_FAST(prev_wifi1, wifi_line1, 50,  40, 239,  64)
+    LCD_IF_CHANGED_FAST(prev_wifi2, wifi_line2, 30,  65, 239,  89)
+    LCD_IF_CHANGED_FAST(prev_x,     x_str,      25, 105, 239, 129)
+    LCD_IF_CHANGED_FAST(prev_y,     y_str,      25, 135, 239, 159)
+
+#undef LCD_IF_CHANGED_FAST
+}
+
+static void LCD_UpdateSlow(GPIO_PinState jsw_now, int32_t temp_raw)
+{
+    char btn_str[8], last_str[24], temp_str[24], seg_str[16];
+
+    strcpy(btn_str, (jsw_now == GPIO_PIN_RESET) ? "ON " : "OFF");
+
+    if (jsw_has_been_pressed)
     {
-        strcpy(dir_str, "LEFT");
-        speed = map_range_percent(x_raw, X_LEFT_THRESH_ADC, ADC_MIN);
-    }
-    else if (x_raw > X_RIGHT_THRESH_ADC)
-    {
-        strcpy(dir_str, "RIGHT");
-        speed = map_range_percent(x_raw, X_RIGHT_THRESH_ADC, ADC_MAX);
+        uint32_t e = HAL_GetTick() - last_jsw_press_tick;
+        snprintf(last_str, sizeof(last_str), "%lu.%02lus", e / 1000U, (e % 1000U) / 10U);
     }
     else
     {
-        strcpy(dir_str, "STOP");
-        speed = 0;
+        strcpy(last_str, "never");
     }
 
-    snprintf(spd_str, sizeof(spd_str), "%3u%%", speed);
+    if (temp_raw <= -2032)
+    {
+        strcpy(temp_str, "NO SENSOR");
+    }
+    else
+    {
+        int32_t t = temp_raw, neg = 0, whole, frac;
+        if (t < 0) { neg = 1; t = -t; }
+        whole = t / 16;
+        frac  = ((t % 16) * 100) / 16;
+        if (neg) snprintf(temp_str, sizeof(temp_str), "-%ld.%02ldC", whole, frac);
+        else     snprintf(temp_str, sizeof(temp_str),  "%ld.%02ldC", whole, frac);
+    }
 
-    LCD_ClearTextField(60, 10, 20);
-    LCD_TEXT(60, 10, wifi_line1);
+    snprintf(seg_str, sizeof(seg_str), "%u%u%s", seg_left, seg_right, seg_dp ? "." : "");
 
-    LCD_ClearTextField(40, 30, 24);
-    LCD_TEXT(40, 30, wifi_line2);
+#define LCD_IF_CHANGED_SLOW(prev, cur, x1, y1, x2, y2) \
+    if (strcmp((prev), (cur)) != 0) { \
+        LCD_Clear((x1), (y1), (x2), (y2), WHITE); \
+        LCD_DrawStringS((x1), (y1), (cur)); \
+        strcpy((prev), (cur)); \
+    }
 
-    LCD_ClearTextField(90, 60, 12);
-    LCD_TEXT(90, 60, dir_str);
+    LCD_IF_CHANGED_SLOW(prev_btn,    btn_str,     45, 165,  95, 189)
+    LCD_IF_CHANGED_SLOW(prev_last,   last_str,   130, 165, 239, 189)
+    LCD_IF_CHANGED_SLOW(prev_laser,  laser_line,  60, 195, 239, 219)
+    LCD_IF_CHANGED_SLOW(prev_temp,   temp_str,    60, 225, 239, 249)
+    LCD_IF_CHANGED_SLOW(prev_motion, motion_line, 75, 253, 239, 277)
+    LCD_IF_CHANGED_SLOW(prev_esp_cmd,esp_cmd_rx,  45, 283,  85, 307)
+    LCD_IF_CHANGED_SLOW(prev_seg,    seg_str,    175, 283, 239, 307)
 
-    LCD_ClearTextField(70, 80, 8);
-    LCD_TEXT(70, 80, spd_str);
-}
-
-static void LCD_UpdateSlow(GPIO_PinState jsw_now, int32_t temp_raw, GPIO_PinState k1_now, GPIO_PinState k2_now)
-{
-    char btn_str[16];
-    char laser_disp[32];
-    char motion_disp[24];
-    char esp_disp[8];
-    char k1_str[16];
-    char k2_str[16];
-    (void)temp_raw;
-
-    if (jsw_now == GPIO_PIN_RESET) strcpy(btn_str, "PRESSED");
-    else                           strcpy(btn_str, "RELEASE");
-
-    if (k1_now == GPIO_PIN_SET) strcpy(k1_str, "PRESSED");
-    else                        strcpy(k1_str, "RELEASE");
-
-    if (k2_now == GPIO_PIN_SET) strcpy(k2_str, "PRESSED");
-    else                        strcpy(k2_str, "RELEASE");
-
-    snprintf(laser_disp, sizeof(laser_disp), "%s", laser_line);
-    snprintf(motion_disp, sizeof(motion_disp), "%s", motion_line);
-    snprintf(esp_disp, sizeof(esp_disp), "%s", esp_cmd_rx);
-
-    LCD_ClearTextField(70, 100, 12);
-    LCD_TEXT(70, 100, btn_str);
-
-    LCD_ClearTextField(60, 120, 20);
-    LCD_TEXT(60, 120, laser_disp);
-
-    LCD_ClearTextField(70, 140, 20);
-    LCD_TEXT(70, 140, motion_disp);
-
-    LCD_ClearTextField(50, 160, 8);
-    LCD_TEXT(50, 160, esp_disp);
-
-    LCD_ClearTextField(40, 210, 12);
-    LCD_TEXT(40, 210, k1_str);
-
-    LCD_ClearTextField(40, 230, 12);
-    LCD_TEXT(40, 230, k2_str);
+#undef LCD_IF_CHANGED_SLOW
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
@@ -876,20 +938,41 @@ int main(void)
     SEG_ShowPair(0, 0, 0);
 
     LCD_INIT();
-    LCD_DrawStaticLayout();
+    LCD_Clear(0, 0, 240, 320, WHITE);
+
+    LCD_DrawStringS( 70,  10, "Lai Man To");
+    LCD_DrawStringS( 10,  40, "WiFi:");
+    LCD_DrawStringS( 10,  65, "IP:");
+    LCD_DrawStringS( 10, 105, "X:");
+    LCD_DrawStringS( 10, 135, "Y:");
+    LCD_DrawStringS( 10, 165, "Btn:");
+    LCD_DrawStringS(100, 165, "Last:");
+    LCD_DrawStringS( 10, 195, "Laser:");
+    LCD_DrawStringS( 10, 225, "Temp:");
+    LCD_DrawStringS( 10, 253, "Motion:");
+    LCD_DrawStringS( 10, 283, "ESP:");
+    LCD_DrawStringS(140, 283, "SEG:");
+
+    LCD_DrawStringS( 60, 225, "NO SENSOR");
+    LCD_DrawStringS( 75, 253, "STOP   0%");
+    LCD_DrawStringS( 45, 283, "S");
+    LCD_DrawStringS(175, 283, "00");
+
+    strcpy(prev_temp,    "NO SENSOR");
+    strcpy(prev_motion,  "STOP   0%");
+    strcpy(prev_esp_cmd, "S");
+    strcpy(prev_seg,     "00");
 
     WifiSetUp();
 
     while (1)
     {
-        uint32_t      now      = HAL_GetTick();
-        uint32_t      x_raw    = read_adc1();
-        uint32_t      y_raw    = read_adc2();
-        GPIO_PinState k1_now   = HAL_GPIO_ReadPin(K1_PORT, K1_PIN);
-        GPIO_PinState k2_now   = HAL_GPIO_ReadPin(K2_PORT, K2_PIN);
-        GPIO_PinState jsw_now  = HAL_GPIO_ReadPin(JOY_SW_PORT, JOY_SW_PIN);
-        GPIO_PinState btn1_now = HAL_GPIO_ReadPin(BTN1_PORT, BTN1_PIN);
-        GPIO_PinState btn2_now = HAL_GPIO_ReadPin(BTN2_PORT, BTN2_PIN);
+        uint32_t      now    = HAL_GetTick();
+        uint32_t      x_raw   = read_adc1();
+        uint32_t      y_raw   = read_adc2();
+        GPIO_PinState k1_now  = HAL_GPIO_ReadPin(K1_PORT, K1_PIN);
+        GPIO_PinState k2_now  = HAL_GPIO_ReadPin(K2_PORT, K2_PIN);
+        GPIO_PinState jsw_now = HAL_GPIO_ReadPin(JOY_SW_PORT, JOY_SW_PIN);
 
         if ((last_k1_state == GPIO_PIN_RESET) && (k1_now == GPIO_PIN_SET))
         {
@@ -935,18 +1018,13 @@ int main(void)
 
         laser_update();
         RGB_Update_From_State();
-
-        if (btn1_now == GPIO_PIN_RESET)
-        {
-            RGB_Set(1, 0, 1);
-        }
-        else if (btn2_now == GPIO_PIN_RESET)
-        {
-            RGB_Set(1, 1, 0);
-        }
-
         SEG_Task();
-        Drive_Task(x_raw, y_raw);
+
+        if (wifi_state == WIFI_STATE_DONE || wifi_state == WIFI_STATE_FAIL)
+            Drive_Task(x_raw, y_raw);
+        else
+            snprintf(motion_line, sizeof(motion_line), "WAIT  %3u%%", 0);
+
 
         if ((now - lcd_fast_tick) >= LCD_FAST_UPDATE_MS)
         {
@@ -957,7 +1035,7 @@ int main(void)
         if ((now - lcd_slow_tick) >= LCD_SLOW_UPDATE_MS)
         {
             lcd_slow_tick = now;
-            LCD_UpdateSlow(jsw_now, ds18b20_raw, k1_now, k2_now);
+            LCD_UpdateSlow(jsw_now, ds18b20_raw);
         }
 
         HAL_Delay(10);
@@ -1108,11 +1186,6 @@ static void MX_GPIO_Init(void)
     g.Mode = GPIO_MODE_INPUT;
     g.Pull = GPIO_PULLUP;
     HAL_GPIO_Init(JOY_SW_PORT, &g);
-
-    g.Pin  = BTN1_PIN | BTN2_PIN;
-    g.Mode = GPIO_MODE_INPUT;
-    g.Pull = GPIO_PULLUP;
-    HAL_GPIO_Init(BTN1_PORT, &g);
 
     g.Pin  = K1_PIN;
     g.Mode = GPIO_MODE_INPUT;
