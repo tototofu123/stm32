@@ -2,6 +2,7 @@
 #include "lcd.h"
 #include "peripherals.h"
 #include "mode_2.h"
+#include "mode_3.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -12,17 +13,173 @@ uint32_t    lcd_fast_tick = 0;
 uint32_t    lcd_slow_tick = 0;
 uint8_t     touch_display_flag = 0U;
 
+// WiFi List Variables
+char wifi_ssids[MAX_WIFI_NETWORKS][33];
+uint8_t wifi_count = 0;
+int8_t selected_wifi_idx = -1;
+
+// Keyboard Variables
+char keyboard_buffer[33] = "";
+uint8_t kb_shift = 0;
+
 void LCD_ClearTextField(uint16_t x, uint16_t y, uint16_t chars, uint16_t bg)
 {
-    // Width = 8, Height = 16 for standard font
     LCD_Clear(x, y, chars * 8, 16, bg); 
+}
+
+void LCD_DrawStatusBar(void)
+{
+    LCD_Clear(0, 0, 240, 20, UI_HEAD);
+    LCD_SetColors(BLUE, UI_HEAD);
+    
+    char ip_line[24];
+    if (strlen(wifi_line2) > 5) {
+        snprintf(ip_line, sizeof(ip_line), "IP:%s", wifi_line2);
+    } else {
+        strcpy(ip_line, "WiFi:DISCONNECTED");
+    }
+    LCD_TEXT(5, 2, ip_line);
+    LCD_SetColors(BLUE, WHITE);
+}
+
+void LCD_DrawHome(void)
+{
+    LCD_Clear(0, 0, 240, 320, UI_BG);
+    LCD_DrawStatusBar();
+    
+    LCD_SetColors(BLACK, UI_BG);
+    LCD_TEXT(55, 60, "MASTER CONTROL");
+    
+    LCD_Clear(20, 100, 200, 60, BLUE);
+    LCD_Clear(22, 102, 196, 56, WHITE);
+    LCD_SetColors(BLUE, WHITE);
+    LCD_TEXT(80, 122, ">> BATTLE <<");
+    
+    LCD_Clear(20, 180, 200, 60, MY_GRAY);
+    LCD_Clear(22, 182, 196, 56, WHITE);
+    LCD_SetColors(MY_GRAY, WHITE);
+    LCD_TEXT(75, 202, ">> SETTINGS <<");
+    
+    LCD_Clear(0, 280, 240, 40, UI_BOTTOM);
+    LCD_SetColors(WHITE, UI_BOTTOM);
+    LCD_TEXT(40, 292, "TOUCH SCREEN TO START");
+    LCD_SetColors(BLUE, WHITE);
+}
+
+void LCD_DrawSettings(void)
+{
+    LCD_Clear(0, 0, 240, 320, UI_BG);
+    LCD_DrawStatusBar();
+    
+    LCD_SetColors(BLACK, UI_BG);
+    LCD_TEXT(10, 30, "NETWORK SETTINGS");
+    
+    LCD_DrawWiFiList();
+    
+    LCD_Clear(0, 280, 240, 40, UI_BOTTOM);
+    LCD_SetColors(WHITE, UI_BOTTOM);
+    LCD_TEXT(10, 292, "K1:BACK   K2:SCAN");
+    LCD_SetColors(BLUE, WHITE);
+}
+
+void LCD_DrawWiFiList(void)
+{
+    LCD_Clear(10, 60, 220, 160, WHITE);
+    LCD_DrawRectangle(10, 60, 220, 160, BLACK);
+    
+    if (wifi_count == 0) {
+        LCD_SetColors(BLACK, WHITE);
+        LCD_TEXT(20, 80, "No Networks Found");
+        LCD_TEXT(20, 100, "Press K2 to Scan");
+    } else {
+        for (int i = 0; i < wifi_count && i < 7; i++) {
+            uint16_t y = 65 + (i * 22);
+            if (i == selected_wifi_idx) {
+                LCD_Clear(12, y-2, 216, 20, UI_BOX_SEL);
+                LCD_SetColors(WHITE, UI_BOX_SEL);
+            } else {
+                LCD_SetColors(BLACK, WHITE);
+            }
+            LCD_TEXT(15, y, wifi_ssids[i]);
+        }
+    }
+    LCD_SetColors(BLUE, WHITE);
+}
+
+void LCD_DrawKeyboard(const char* current_input)
+{
+    LCD_Clear(0, 0, 240, 320, UI_BG);
+    LCD_DrawStatusBar();
+    
+    LCD_SetColors(BLACK, UI_BG);
+    LCD_TEXT(10, 25, "ENTER PASSWORD:");
+    
+    // Input Box
+    LCD_Clear(10, 45, 220, 30, WHITE);
+    LCD_DrawRectangle(10, 45, 220, 30, BLACK);
+    LCD_SetColors(BLACK, WHITE);
+    LCD_TEXT(15, 52, current_input);
+    
+    // Keyboard Grid (Grid 6x6 for A-Z, 0-9, etc.)
+    const char* keys = kb_shift ? "ABCDEF GHIJKL MNOPQR STUVWX YZ0123 456789" : "abcdef ghijkl mnopqr stuvwx yz.,-_ !?@#$%";
+    
+    for (int r = 0; i < 6; i++) {
+        for (int c = 0; c < 6; c++) {
+            int idx = (r * 6) + c;
+            if (idx >= strlen(keys)) break;
+            
+            uint16_t x = 10 + (c * 38);
+            uint16_t y = 90 + (r * 32);
+            
+            LCD_Clear(x, y, 35, 28, UI_BOX_NSEL);
+            LCD_SetColors(BLACK, UI_BOX_NSEL);
+            char key_str[2] = {keys[idx], '\0'};
+            LCD_TEXT(x + 12, y + 6, key_str);
+        }
+    }
+    
+    // Special Keys (Shift, Backspace, Enter)
+    LCD_Clear(10, 282, 70, 35, kb_shift ? UI_BOX_SEL : UI_BOX_NSEL);
+    LCD_TEXT(20, 292, "SHIFT");
+    
+    LCD_Clear(85, 282, 70, 35, RED);
+    LCD_TEXT(95, 292, "BACK");
+    
+    LCD_Clear(160, 282, 70, 35, GREEN);
+    LCD_TEXT(170, 292, "ENTER");
+    
+    LCD_SetColors(BLUE, WHITE);
+}
+
+void LCD_DrawMode3Placeholder(void)
+{
+    LCD_Clear(0, 0, 240, 320, UI_BG);
+    LCD_DrawStatusBar();
+    
+    LCD_SetColors(RED, UI_BG);
+    LCD_TEXT(60, 60, "MODE 3: TANK ARENA");
+    
+    LCD_SetColors(BLACK, UI_BG);
+    LCD_TEXT(20, 100, "Initializing Seed...");
+    
+    char seed_str[32];
+    snprintf(seed_str, sizeof(seed_str), "Seed: %lu", m3_world_seed);
+    LCD_TEXT(20, 125, seed_str);
+    
+    LCD_SetColors(BLUE, UI_BG);
+    LCD_TEXT(20, 160, "Waiting for Phone...");
+    LCD_TEXT(20, 185, "(K2 to Sim Connect)");
+    
+    LCD_Clear(0, 280, 240, 40, UI_BOTTOM);
+    LCD_SetColors(WHITE, UI_BOTTOM);
+    LCD_TEXT(60, 292, "[ SILENT MODE ]");
+    LCD_SetColors(BLUE, WHITE);
 }
 
 void LCD_DrawModeSelect(void)
 {
     LCD_Clear(0, 0, 240, 320, UI_BG);
-    LCD_Clear(0, 0, 240, 6, UI_HEAD);
-    LCD_TEXT(10, 12, "SELECT MODE");
+    LCD_DrawStatusBar();
     LCD_TEXT(10, 32, "K1:NEXT   K2:CONFIRM");
 
     LCD_Clear(20, 70, 200, 40, (selected_mode == GAME_MODE_1) ? UI_BOX_SEL : UI_BOX_NSEL);
@@ -71,8 +228,7 @@ void LCD_DrawCarSelect(void)
 {
     char line[32];
     LCD_Clear(0, 0, 240, 320, UI_BG);
-    LCD_Clear(0, 0, 240, 6, UI_HEAD);
-    LCD_TEXT(10, 10, "SELECT CAR");
+    LCD_DrawStatusBar();
     LCD_TEXT(10, 28, "K1:NEXT K2:START");
 
     snprintf(line, sizeof(line), "MODE:%s", MODE_Name(selected_mode));
@@ -146,10 +302,8 @@ void LCD_DrawCarConfirm(void)
 void LCD_DrawGameLayout(void)
 {
     LCD_Clear(0, 0, 240, 320, UI_BG);
-    LCD_Clear(0, 0, 240, 6, UI_HEAD);
+    LCD_DrawStatusBar();
 
-    LCD_TEXT(10, 10,  "WiFi:");
-    LCD_TEXT(10, 30,  "IP:");
     LCD_TEXT(10, 50,  "Mode:");
     LCD_TEXT(10, 70,  "Direction:");
     LCD_TEXT(10, 90,  "Speed:");
@@ -166,10 +320,9 @@ void LCD_DrawGameLayout(void)
 
 void LCD_DrawMode2InputSelect(void) {
     LCD_Clear(0, 0, 240, 320, UI_BG);
-    LCD_Clear(0, 0, 240, 40, UI_HEAD);
-    LCD_TEXT(40, 10, "SELECT CONTROL");
+    LCD_DrawStatusBar();
+    LCD_TEXT(40, 30, "SELECT CONTROL");
     
-    // Joystick Section
     if (selected_input == M2_INPUT_JOYSTICK) {
         LCD_Clear(10, 70, 220, 80, BLUE);
         LCD_Clear(12, 72, 216, 76, WHITE);
@@ -179,7 +332,6 @@ void LCD_DrawMode2InputSelect(void) {
         LCD_TEXT(55, 102, "[JOYSTICK]");
     }
     
-    // Touch Section
     if (selected_input == M2_INPUT_TOUCH) {
         LCD_Clear(10, 170, 220, 80, MAGENTA);
         LCD_Clear(12, 172, 216, 76, WHITE);
@@ -194,8 +346,6 @@ void LCD_DrawMode2InputSelect(void) {
 }
 
 void LCD_UpdateMode2InputSelect(void) {
-    // Just refresh the two control boxes
-    // Joystick Section
     if (selected_input == M2_INPUT_JOYSTICK) {
         LCD_Clear(10, 70, 220, 80, BLUE);
         LCD_Clear(12, 72, 216, 76, WHITE);
@@ -207,7 +357,6 @@ void LCD_UpdateMode2InputSelect(void) {
         LCD_TEXT(55, 102, "[JOYSTICK]");
     }
     
-    // Touch Section
     if (selected_input == M2_INPUT_TOUCH) {
         LCD_Clear(10, 170, 220, 80, MAGENTA);
         LCD_Clear(12, 172, 216, 76, WHITE);
@@ -218,7 +367,7 @@ void LCD_UpdateMode2InputSelect(void) {
         LCD_SetColors(BLUE, GREY);
         LCD_TEXT(45, 202, "[TOUCH SCREEN]");
     }
-    LCD_SetColors(BLUE, WHITE); // Reset to default
+    LCD_SetColors(BLUE, WHITE);
 }
 
 void LCD_DrawMode2CommandHistory(char cmd, uint8_t slot, uint8_t is_new)
@@ -226,10 +375,9 @@ void LCD_DrawMode2CommandHistory(char cmd, uint8_t slot, uint8_t is_new)
     uint16_t x = 5 + (slot * 23);
     uint16_t y = 55; 
     
-    // Character fix: strictly F, L, R, S
     if (cmd == '>') cmd = 'R';
     if (cmd == '<') cmd = 'L';
-    if (cmd == 'B') cmd = 'F'; // No backward, treat as forward if it somehow appears
+    if (cmd == 'B') cmd = 'F'; 
     
     if (is_new) {
         LCD_SetColors(GREEN, UI_BG);
@@ -238,7 +386,7 @@ void LCD_DrawMode2CommandHistory(char cmd, uint8_t slot, uint8_t is_new)
     }
     
     LCD_DrawChar(x, y, cmd);
-    LCD_SetColors(BLUE, WHITE); // Reset
+    LCD_SetColors(BLUE, WHITE);
 }
 
 void LCD_DrawMode2Stats(uint16_t current_move, uint16_t total_moves, uint32_t distance, uint32_t seconds_left)
@@ -246,42 +394,41 @@ void LCD_DrawMode2Stats(uint16_t current_move, uint16_t total_moves, uint32_t di
     char line1[32];
     char line2[32];
     
-    snprintf(line1, sizeof(line1), "Moves: %u/%u", current_move, total_moves);
-    snprintf(line2, sizeof(line2), "Dist:%lu Time:%lus", distance, seconds_left);
+    snprintf(line1, sizeof(line1), "Steps: %u/%u", current_move, total_moves);
+    snprintf(line2, sizeof(line2), "D:%lu T:%lus", distance, seconds_left);
     
-    // Draw inside the canvas (Y > 80)
     LCD_SetColors(BLACK, UI_BG);
-    LCD_ClearTextField(15, 90, 20, UI_BG);
-    LCD_TEXT(15, 90, line1);
-    LCD_ClearTextField(15, 110, 20, UI_BG);
-    LCD_TEXT(15, 110, line2);
+    LCD_ClearTextField(10, 22, 18, UI_BG);
+    LCD_TEXT(10, 22, line1);
+    LCD_ClearTextField(10, 38, 22, UI_BG);
+    LCD_TEXT(10, 38, line2);
     LCD_SetColors(BLUE, WHITE);
 }
 
 void LCD_DrawMode2Canvas(void) 
 {
     LCD_Clear(0, 0, 240, 320, UI_BG);
-    LCD_Clear(0, 0, 240, 20, UI_HEAD);
+    LCD_DrawStatusBar();
     LCD_SetColors(BLUE, UI_HEAD);
-    LCD_TEXT(10, 5, "DRAW FIGHT");
+    LCD_TEXT(10, 2, "DRAW FIGHT"); 
     
     LCD_SetColors(BLUE, UI_BG);
-    if (m2_input_method == M2_INPUT_TOUCH) {
-        LCD_TEXT(10, 25, "Click LCD to Draw");
-    } else {
-        LCD_TEXT(10, 25, "Use Joy to Draw");
+    if (m2_state == M2_STATE_DRAWING) {
+        LCD_TEXT(170, 22, "K1:RST");
+        LCD_TEXT(170, 38, "K2:OK");
+        
+        if (m2_input_method == M2_INPUT_TOUCH) {
+            LCD_TEXT(10, 55, "Click LCD to Draw");
+        } else {
+            LCD_TEXT(10, 55, "Use Joy to Draw");
+        }
     }
     
-    LCD_TEXT(160, 25, "K1:RST");
-    LCD_TEXT(160, 45, "K2:OK");
-    
-    // Draw boundary line
     LCD_DrawLine(0, 75, 240, 75, MY_BLACK);
 }
 
 void LCD_DrawMode2ResetConfirm(void)
 {
-    // Semi-transparent look is hard with simple LCD, so just draw a box
     LCD_Clear(20, 100, 200, 120, MY_BLACK);
     LCD_Clear(22, 102, 196, 116, WHITE);
     
@@ -318,12 +465,6 @@ void LCD_UpdateGameFast(uint32_t x_raw, uint32_t y_raw)
         speed = car_apply_speed_cap(dir_str[0], speed);
         snprintf(spd_str, sizeof(spd_str), "%3u%%", speed);
     }
-
-    LCD_ClearTextField(60, 10, 20, UI_BG);
-    LCD_TEXT(60, 10, wifi_line1);
-
-    LCD_ClearTextField(40, 30, 24, UI_BG);
-    LCD_TEXT(40, 30, wifi_line2);
 
     LCD_ClearTextField(50, 50, 12, UI_BG);
     LCD_TEXT(50, 50, (char *)MODE_Name(selected_mode));

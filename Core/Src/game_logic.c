@@ -3,11 +3,13 @@
 #include "alerts.h"
 #include "seven_seg.h"
 #include "mode_2.h"
+#include "mode_3.h"
+#include "ui.h"
 #include <stdio.h>
 #include <string.h>
 
 // Global State Variables
-app_state_t   app_state = APP_MODE_SELECT;
+app_state_t   app_state = APP_HOME; // Default to Home
 game_mode_t   selected_mode = GAME_MODE_1;
 car_type_t    selected_car = CAR_V0;
 laser_state_t laser_state = LASER_IDLE;
@@ -368,15 +370,19 @@ static void Drive_Task_Mode1(uint32_t x_raw, uint32_t y_raw)
 
 void Game_Router_Task(uint32_t x_raw, uint32_t y_raw, uint8_t k1_click, uint8_t k2_click, uint8_t fire_pressed)
 {
-    if (selected_mode == GAME_MODE_1) {
-        if (fire_pressed) laser_on_press();
-        else laser_on_release();
-        
-        laser_update();
-        RGB_Update_From_State();
-        Drive_Task_Mode1(x_raw, y_raw);
-    }
-    else {
+    if (app_state == APP_GAME) {
+        if (selected_mode == GAME_MODE_1) {
+            if (fire_pressed) laser_on_press();
+            else laser_on_release();
+            
+            laser_update();
+            RGB_Update_From_State();
+            Drive_Task_Mode1(x_raw, y_raw);
+        }
+        else {
+            Motor_SendCmd('S', 0);
+        }
+    } else {
         Motor_SendCmd('S', 0);
     }
 }

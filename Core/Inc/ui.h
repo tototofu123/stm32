@@ -31,6 +31,26 @@ extern uint8_t     touch_display_flag;
 
 // Function Prototypes
 void LCD_ClearTextField(uint16_t x, uint16_t y, uint16_t chars, uint16_t bg);
+
+// Master Screens
+void LCD_DrawStatusBar(void);
+void LCD_DrawHome(void);
+void LCD_DrawSettings(void);
+void LCD_DrawWiFiList(void);
+void LCD_DrawKeyboard(const char* current_input);
+void LCD_DrawMode3Placeholder(void);
+
+// WiFi List Structure
+#define MAX_WIFI_NETWORKS 10
+extern char wifi_ssids[MAX_WIFI_NETWORKS][33];
+extern uint8_t wifi_count;
+extern int8_t selected_wifi_idx;
+
+// Keyboard State
+extern char keyboard_buffer[33];
+extern uint8_t kb_shift;
+
+// Existing Screens
 void LCD_DrawModeSelect(void);
 void LCD_UpdateModeSelection(void);
 void LCD_DrawModeConfirm(void);
@@ -40,6 +60,7 @@ void LCD_DrawCarConfirm(void);
 void LCD_DrawGameLayout(void);
 void LCD_DrawMode2InputSelect(void);
 void LCD_UpdateMode2InputSelect(void);
+void LCD_DrawMode2Stats(uint16_t current_move, uint16_t total_moves, uint32_t distance, uint32_t seconds_left);
 void LCD_DrawMode2Canvas(void);
 void LCD_DrawMode2ResetConfirm(void);
 void LCD_DrawMode2CommandHistory(char cmd, uint8_t slot, uint8_t is_new);

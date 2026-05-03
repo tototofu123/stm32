@@ -4,31 +4,31 @@
 #include "main.h"
 #include <stdint.h>
 
-// DS18B20 Pins
-#define DS18B20_PIN         GPIO_PIN_8
-#define DS18B20_PORT        GPIOC
-
-// External Handles (Defined in main.c by CubeMX)
-extern ADC_HandleTypeDef hadc1;
-extern ADC_HandleTypeDef hadc2;
-extern UART_HandleTypeDef huart3;
-
-// External WiFi & UART Variables (Exposed for the UI to read)
+// WiFi (ESP8266)
 extern char wifi_line1[32];
 extern char wifi_line2[32];
-extern char esp_rx[256];
 extern uint8_t esp_rx_byte;
-extern volatile uint16_t esp_rx_index;
-extern volatile uint8_t  esp_rx_done;
-
-// Function Prototypes
-uint32_t read_adc1(void);
-uint32_t read_adc2(void);
-
-int32_t  DS18B20_ReadRaw(void);
 
 void sendAT(const char *cmd);
-void readResponse(void);
 void WifiSetUp(void);
+void WifiScan(void);
+void WifiJoin(const char* ssid, const char* pass);
+
+// Sensors
+uint32_t read_adc1(void);
+uint32_t read_adc2(void);
+uint16_t map_u16(uint32_t x, uint32_t in_min, uint32_t in_max, uint32_t out_min, uint32_t out_max);
+int32_t DS18B20_ReadRaw(void);
+
+// RGB LED
+#define RGB_R_PIN           GPIO_PIN_10
+#define RGB_R_PORT          GPIOB
+#define RGB_G_PIN           GPIO_PIN_1
+#define RGB_G_PORT          GPIOE
+#define RGB_B_PIN           GPIO_PIN_11
+#define RGB_B_PORT          GPIOB
+#define DS18B20_PIN         GPIO_PIN_11
+#define DS18B20_PORT        GPIOC
+void RGB_Set(uint8_t r, uint8_t g, uint8_t b);
 
 #endif // PERIPHERALS_H

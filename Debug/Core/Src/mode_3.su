@@ -1,0 +1,2 @@
+../Core/Src/mode_3.c:12:6:Mode3_Init	16	static
+../Core/Src/mode_3.c:26:6:Mode3_Run	32	static

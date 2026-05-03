@@ -4,6 +4,7 @@
 #include "lcd.h"
 #include "ui.h"
 #include "alerts.h"
+#include "seven_seg.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -46,6 +47,7 @@ void Mode2_Init(void) {
     Buzzer_SetMute(1);  
     LCD_Clear(0, 0, 240, 320, UI_BG);
     LCD_DrawMode2InputSelect();
+    SEG_ShowCmd('S'); 
 }
 
 void Mode2_ResetCanvas(void) {
@@ -63,28 +65,73 @@ void Mode2_ResetCanvas(void) {
     strcpy(motion_line, "READY");
     m2_state = M2_STATE_DRAWING;
     LCD_DrawMode2Canvas();
+    SEG_ShowCmd('S');
 }
 
-static void DrawCanvasArrow(uint16_t x, uint16_t y, char dir, uint16_t color)
+static void DrawCanvasArrow(uint16_t x, uint16_t y, int dx, int dy, uint16_t color)
 {
-    // Draw a larger 9x9 arrow for better visibility
-    if (dir == 'F') { // Up
-        LCD_DrawLine(x, y - 5, x - 4, y, color);
-        LCD_DrawLine(x, y - 5, x + 4, y, color);
-        LCD_DrawLine(x, y - 5, x, y + 5, color);
-    } else if (dir == 'B') { // Down
-        LCD_DrawLine(x, y + 5, x - 4, y, color);
-        LCD_DrawLine(x, y + 5, x + 4, y, color);
-        LCD_DrawLine(x, y + 5, x, y - 5, color);
-    } else if (dir == 'L') { // Left
-        LCD_DrawLine(x - 5, y, x, y - 4, color);
-        LCD_DrawLine(x - 5, y, x, y + 4, color);
-        LCD_DrawLine(x - 5, y, x + 5, y, color);
-    } else if (dir == 'R') { // Right
-        LCD_DrawLine(x + 5, y, x, y - 4, color);
-        LCD_DrawLine(x + 5, y, x, y + 4, color);
-        LCD_DrawLine(x + 5, y, x - 5, y, color);
+    if (dx == 0 && dy == 0) return;
+
+    // Use a fixed size for the arrow head
+    const int s = 5; 
+    
+    // Determine if it's primarily horizontal, vertical, or diagonal
+    int adx = abs(dx);
+    int ady = abs(dy);
+    
+    // Ratio check for diagonal (between 0.4 and 2.5)
+    uint8_t is_diag = (adx * 10 >= ady * 4) && (ady * 10 >= adx * 4);
+
+    if (!is_diag) {
+        if (adx > ady) { // Horizontal
+            if (dx > 0) { // Right
+                LCD_DrawLine(x + s, y, x, y - s, color);
+                LCD_DrawLine(x + s, y, x, y + s, color);
+                LCD_DrawLine(x + s, y, x - s, y, color);
+            } else { // Left
+                LCD_DrawLine(x - s, y, x, y - s, color);
+                LCD_DrawLine(x - s, y, x, y + s, color);
+                LCD_DrawLine(x - s, y, x + s, y, color);
+            }
+        } else { // Vertical
+            if (dy > 0) { // Down
+                LCD_DrawLine(x, y + s, x - s, y, color);
+                LCD_DrawLine(x, y + s, x + s, y, color);
+                LCD_DrawLine(x, y + s, x, y - s, color);
+            } else { // Up
+                LCD_DrawLine(x, y - s, x - s, y, color);
+                LCD_DrawLine(x, y - s, x + s, y, color);
+                LCD_DrawLine(x, y - s, x, y + s, color);
+            }
+        }
+    } else { // Diagonal
+        if (dx > 0 && dy < 0) { // NE (Top-Right)
+            LCD_DrawLine(x + s, y - s, x + s - 6, y - s, color);
+            LCD_DrawLine(x + s, y - s, x + s, y - s + 6, color);
+            LCD_DrawLine(x + s, y - s, x - s, y + s, color);
+        } else if (dx > 0 && dy > 0) { // SE (Bottom-Right)
+            LCD_DrawLine(x + s, y + s, x + s - 6, y + s, color);
+            LCD_DrawLine(x + s, y + s, x + s, y + s - 6, color);
+            LCD_DrawLine(x + s, y + s, x - s, y - s, color);
+        } else if (dx < 0 && dy > 0) { // SW (Bottom-Left)
+            LCD_DrawLine(x - s, y + s, x - s + 6, y + s, color);
+            LCD_DrawLine(x - s, y + s, x - s, y + s - 6, color);
+            LCD_DrawLine(x - s, y + s, x + s, y - s, color);
+        } else if (dx < 0 && dy < 0) { // NW (Top-Left)
+            LCD_DrawLine(x - s, y - s, x - s + 6, y - s, color);
+            LCD_DrawLine(x - s, y - s, x - s, y - s + 6, color);
+            LCD_DrawLine(x - s, y - s, x + s, y + s, color);
+        }
     }
+}
+
+static uint16_t GetTimeColor(uint32_t ms) {
+    uint32_t s = ms / 1000;
+    if (s < 5)  return BLACK; // WHITE requested, but BLACK is visible on WHITE background
+    if (s < 15) return GREEN;
+    if (s < 25) return BLUE;
+    if (s < 35) return RED;
+    return GREY; // "DIM WHITE"
 }
 
 void Mode2_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_click, 
@@ -163,21 +210,36 @@ void Mode2_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
                 overlap_counter++;
             }
 
-            // Clean previous head artifacts - using line_color leaves a thick trail
+            // Clean previous head artifacts
             LCD_Clear(old_x - 5, old_y - 5, 11, 11, line_color);
             
             // Draw path line segment
             LCD_DrawLine(old_x, old_y, m2_cursor_x, m2_cursor_y, line_color);
             
-            // Draw NEW Dragon Head (ALWAYS ON TOP)
-            LCD_Clear(m2_cursor_x - 5, m2_cursor_y - 5, 11, 11, YELLOW);
-            LCD_Clear(m2_cursor_x - 2, m2_cursor_y - 2, 5, 5, BLACK); 
+            // Real-time Gradient Color
+            uint16_t current_color = GetTimeColor(remaining_time_ms);
+
+            // Draw NEW Dragon Head (Color reflects time efficiency)
+            LCD_Clear(m2_cursor_x - 5, m2_cursor_y - 5, 11, 11, current_color);
+            LCD_Clear(m2_cursor_x - 2, m2_cursor_y - 2, 5, 5, (current_color == BLACK) ? WHITE : BLACK); 
+
+            // Live Stats in Canvas/Header
+            LCD_DrawMode2Stats(m2_path_count, MAX_POINTS, total_distance, remaining_time_ms / 1000);
         }
 
         if (old_x != m2_cursor_x || old_y != m2_cursor_y) {
             if (m2_path_count == 0 || (abs(m2_cursor_x - m2_path_x[m2_path_count-1]) > 8 || 
                                        abs(m2_cursor_y - m2_path_y[m2_path_count-1]) > 8)) {
                 if (m2_path_count < MAX_POINTS) {
+                    // Real-time calculation
+                    if (m2_path_count > 0) {
+                        int dx = m2_cursor_x - m2_path_x[m2_path_count-1];
+                        int dy = m2_cursor_y - m2_path_y[m2_path_count-1];
+                        uint32_t d = (uint32_t)sqrt(dx*dx + dy*dy);
+                        total_distance += d;
+                        remaining_time_ms += d * 12;
+                    }
+                    
                     m2_path_x[m2_path_count] = m2_cursor_x;
                     m2_path_y[m2_path_count] = m2_cursor_y;
                     m2_path_count++;
@@ -197,14 +259,7 @@ void Mode2_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
             m2_visit_count = 0;
             history_slot = 0;
             last_history_cmd = ' ';
-            total_distance = 0;
             
-            remaining_time_ms = 0;
-            for (int i = 0; i < m2_path_count - 1; i++) {
-                uint32_t d = (uint32_t)sqrt(pow(m2_path_x[i+1]-m2_path_x[i], 2) + pow(m2_path_y[i+1]-m2_path_y[i], 2));
-                remaining_time_ms += d * 12; 
-            }
-
             Motor_SendCmd('S', 0); 
             move_timer = now + 400; 
         }
@@ -228,11 +283,8 @@ void Mode2_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
             
             int dx = m2_path_x[target_pt_idx + 1] - m2_path_x[target_pt_idx];
             int dy = m2_path_y[target_pt_idx + 1] - m2_path_y[target_pt_idx];
-            char canvas_dir = 'F';
-            if (abs(dx) >= abs(dy)) canvas_dir = (dx > 0) ? 'R' : 'L';
-            else canvas_dir = (dy > 0) ? 'B' : 'F';
 
-            DrawCanvasArrow(curr_x, curr_y, canvas_dir, RED);
+            DrawCanvasArrow(curr_x, curr_y, dx, dy, RED);
             
             if (m2_visit_count > 0) {
                 LCD_DrawLine(m2_visit_x[m2_visit_count - 1], m2_visit_y[m2_visit_count - 1], curr_x, curr_y, RED);
@@ -244,6 +296,7 @@ void Mode2_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
 
         if (target_pt_idx >= m2_path_count) {
             Motor_SendCmd('S', 0); 
+            SEG_ShowCmd('S');
             LCD_ClearTextField(15, 90, 24, UI_BG);
             LCD_ClearTextField(15, 110, 24, UI_BG);
             LCD_SetColors(RED, UI_BG);
@@ -278,6 +331,7 @@ void Mode2_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
 
             if (duration > 0) {
                 Motor_SendCmd(cmd, 60);
+                SEG_ShowCmd(cmd);
                 
                 uint8_t prev_slot = (history_slot == 0) ? 9 : (history_slot - 1);
                 if (last_history_cmd != ' ') {

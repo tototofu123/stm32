@@ -44,7 +44,8 @@ typedef enum {
     SEG_K1_COUNT,
     SEG_K2_SHOW88,
     SEG_JSW_CD,
-    SEG_ZERO_HOLD
+    SEG_ZERO_HOLD,
+    SEG_MODE2_CMD
 } seg_mode_t;
 
 // Extern Globals (So main.c can interact with the current state)
@@ -62,6 +63,7 @@ void SEG_ShowLeft(uint8_t d, uint8_t dp);
 void SEG_ShowRight(uint8_t d);
 void SEG_ShowPair(uint8_t left, uint8_t right, uint8_t dp);
 void SEG_ShowTenths(int t);
+void SEG_ShowCmd(char cmd);
 void SEG_StartCooldownCountdown(uint32_t cooldown_ms);
 void SEG_Task(void);
 

@@ -1,4 +1,5 @@
-../Core/Src/mode_2.c:43:6:Mode2_Init	16	static
-../Core/Src/mode_2.c:51:6:Mode2_ResetCanvas	8	static
-../Core/Src/mode_2.c:68:13:DrawCanvasArrow	32	static
-../Core/Src/mode_2.c:90:6:Mode2_Run	112	static
+../Core/Src/mode_2.c:44:6:Mode2_Init	16	static
+../Core/Src/mode_2.c:53:6:Mode2_ResetCanvas	8	static
+../Core/Src/mode_2.c:71:13:DrawCanvasArrow	56	static
+../Core/Src/mode_2.c:128:17:GetTimeColor	24	static
+../Core/Src/mode_2.c:137:6:Mode2_Run	112	static

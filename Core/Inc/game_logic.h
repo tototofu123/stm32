@@ -6,11 +6,14 @@
 
 // Enums
 typedef enum {
-    APP_MODE_SELECT = 0,
+    APP_HOME = 0,
+    APP_SETTINGS,
+    APP_MODE_SELECT,
     APP_MODE_CONFIRM,
     APP_CAR_SELECT,
     APP_CAR_CONFIRM,
-    APP_GAME
+    APP_GAME,
+    APP_MODE_3 // Virtual Arena / Tank Game
 } app_state_t;
 
 typedef enum {

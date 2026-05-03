@@ -102,6 +102,35 @@ void SEG_ShowTenths(int t)
     SEG_ShowPair((uint8_t)(t / 10), (uint8_t)(t % 10), 1);
 }
 
+void SEG_ShowCmd(char cmd)
+{
+    static const uint8_t segments[4][7] = {
+        {0,0,0,1,1,1,0}, // L
+        {1,0,0,0,1,1,1}, // F
+        {1,0,1,1,0,1,1}, // S (same as 5)
+        {1,1,1,0,1,1,1}  // A
+    };
+
+    uint8_t idx = 2; // Default to S
+    if (cmd == 'L') idx = 0;
+    else if (cmd == 'F') idx = 1;
+    else if (cmd == 'S') idx = 2;
+    else if (cmd == 'A' || cmd == 'R') idx = 3;
+
+    seg_mode = SEG_MODE2_CMD;
+
+    // Show on both segments
+    for (int i = 0; i < 7; i++) {
+        SEG_WritePin((i == 0) ? LSEG_A_PORT : (i == 1) ? LSEG_B_PORT : (i == 2) ? LSEG_C_PORT : (i == 3) ? LSEG_D_PORT : (i == 4) ? LSEG_E_PORT : (i == 5) ? LSEG_F_PORT : LSEG_G_PORT,
+                     (i == 0) ? LSEG_A_PIN : (i == 1) ? LSEG_B_PIN : (i == 2) ? LSEG_C_PIN : (i == 3) ? LSEG_D_PIN : (i == 4) ? LSEG_E_PIN : (i == 5) ? LSEG_F_PIN : LSEG_G_PIN,
+                     segments[idx][i]);
+        SEG_WritePin((i == 0) ? RSEG_A_PORT : (i == 1) ? RSEG_B_PORT : (i == 2) ? RSEG_C_PORT : (i == 3) ? RSEG_D_PORT : (i == 4) ? RSEG_E_PORT : (i == 5) ? RSEG_F_PORT : RSEG_G_PORT,
+                     (i == 0) ? RSEG_A_PIN : (i == 1) ? RSEG_B_PIN : (i == 2) ? RSEG_C_PIN : (i == 3) ? RSEG_D_PIN : (i == 4) ? RSEG_E_PIN : (i == 5) ? RSEG_F_PIN : RSEG_G_PIN,
+                     segments[idx][i]);
+    }
+    SEG_WritePin(LSEG_DP_PORT, LSEG_DP_PIN, 0);
+}
+
 void SEG_StartCooldownCountdown(uint32_t cooldown_ms)
 {
     seg_mode = SEG_JSW_CD;
