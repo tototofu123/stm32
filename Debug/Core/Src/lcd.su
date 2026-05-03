@@ -12,8 +12,9 @@
 ../Core/Src/lcd.c:269:10:LCD_Read_PixelData	16	static
 ../Core/Src/lcd.c:289:10:LCD_GetPointPixel	24	static
 ../Core/Src/lcd.c:303:6:LCD_DrawLine	64	static
-../Core/Src/lcd.c:375:6:LCD_DrawChar	24	static
-../Core/Src/lcd.c:409:6:LCD_DrawString	16	static
-../Core/Src/lcd.c:437:6:LCD_DrawDot	16	static
-../Core/Src/lcd.c:450:6:LCD_DrawEllipse	40	static
-../Core/Src/lcd.c:470:6:LCD_DrawChinese	24	static
+../Core/Src/lcd.c:378:6:LCD_SetColors	16	static
+../Core/Src/lcd.c:384:6:LCD_DrawChar	24	static
+../Core/Src/lcd.c:416:6:LCD_DrawString	16	static
+../Core/Src/lcd.c:444:6:LCD_DrawDot	16	static
+../Core/Src/lcd.c:457:6:LCD_DrawEllipse	40	static
+../Core/Src/lcd.c:477:6:LCD_DrawChinese	24	static

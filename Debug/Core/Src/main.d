@@ -29,7 +29,8 @@ Core/Src/main.o: ../Core/Src/main.c ../Core/Inc/main.h \
  C:/Users/totot/STM32Cube/Repository/STM32Cube_FW_F1_V1.8.4/Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_uart.h \
  ../Core/Inc/lcd.h ../Core/Inc/touch.h ../Core/Inc/main.h \
  ../Core/Inc/seven_seg.h ../Core/Inc/alerts.h ../Core/Inc/peripherals.h \
- ../Core/Inc/game_logic.h ../Core/Inc/ui.h ../Core/Inc/game_logic.h
+ ../Core/Inc/game_logic.h ../Core/Inc/ui.h ../Core/Inc/game_logic.h \
+ ../Core/Inc/mode_2.h
 ../Core/Inc/main.h:
 C:/Users/totot/STM32Cube/Repository/STM32Cube_FW_F1_V1.8.4/Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal.h:
 ../Core/Inc/stm32f1xx_hal_conf.h:
@@ -68,3 +69,4 @@ C:/Users/totot/STM32Cube/Repository/STM32Cube_FW_F1_V1.8.4/Drivers/STM32F1xx_HAL
 ../Core/Inc/game_logic.h:
 ../Core/Inc/ui.h:
 ../Core/Inc/game_logic.h:
+../Core/Inc/mode_2.h:
