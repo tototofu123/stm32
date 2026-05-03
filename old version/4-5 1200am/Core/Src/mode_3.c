@@ -98,31 +98,6 @@ void LCD_UpdateMode3SetupObstacles(void);
 void LCD_UpdateMode3SetupBots(void);
 void LCD_DrawMode3HUD(void);
 
-static void SafeClear(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color) {
-    if (x + w <= 0 || x >= 240 || y + h <= VP_Y_OFFSET || y >= 320) return;
-    int16_t x2 = x + w - 1;
-    int16_t y2 = y + h - 1;
-    if (x < 0) x = 0;
-    if (y < VP_Y_OFFSET) y = VP_Y_OFFSET;
-    if (x2 > 239) x2 = 239;
-    if (y2 > 319) y2 = 319;
-    if (x <= x2 && y <= y2) {
-        LCD_Clear((uint16_t)x, (uint16_t)y, (uint16_t)(x2 - x + 1), (uint16_t)(y2 - y + 1), color);
-    }
-}
-
-static void SafeDrawLine(int16_t x1, int16_t y1, int16_t x2, int16_t y2, uint16_t color) {
-    if ((x1 < 0 && x2 < 0) || (x1 >= 240 && x2 >= 240) || 
-        (y1 < VP_Y_OFFSET && y2 < VP_Y_OFFSET) || (y1 >= 320 && y2 >= 320)) return;
-    
-    if (x1 < 0) x1 = 0; else if (x1 > 239) x1 = 239;
-    if (y1 < VP_Y_OFFSET) y1 = VP_Y_OFFSET; else if (y1 > 319) y1 = 319;
-    if (x2 < 0) x2 = 0; else if (x2 > 239) x2 = 239;
-    if (y2 < VP_Y_OFFSET) y2 = VP_Y_OFFSET; else if (y2 > 319) y2 = 319;
-    
-    LCD_DrawLine((uint16_t)x1, (uint16_t)y1, (uint16_t)x2, (uint16_t)y2, color);
-}
-
 void Mode3_Init(void) {
     m3_state = M3_STATE_SETUP_SIZE;
     m3_setup_row = 0;
@@ -327,8 +302,10 @@ static void Mode3_RenderArena(void) {
             float lrad = tanks[i].last_angle * 3.14159f / 180.0f;
             int16_t ltx = (int16_t)tanks[i].last_x - cam_x;
             int16_t lty = (int16_t)tanks[i].last_y - cam_y + VP_Y_OFFSET;
-            SafeDrawLine(ltx, lty, ltx + (int16_t)(18*cos(lrad)), lty + (int16_t)(18*sin(lrad)), UI_BG);
-            SafeClear(ltx-8, lty-8, 17, 17, UI_BG);
+            if (ltx >= 10 && ltx <= 230 && lty >= VP_Y_OFFSET + 10 && lty <= 310) {
+                LCD_DrawLine(ltx, lty, ltx + (int16_t)(18*cos(lrad)), lty + (int16_t)(18*sin(lrad)), UI_BG);
+                LCD_Clear(ltx-8, lty-8, 17, 17, UI_BG);
+            }
             int tr = (int)tanks[i].last_y / TILE_SIZE, tc = (int)tanks[i].last_x / TILE_SIZE;
             for(int r=tr-2; r<=tr+2; r++) {
                 for(int c=tc-2; c<=tc+2; c++) {
@@ -341,26 +318,26 @@ static void Mode3_RenderArena(void) {
     for(int i=0; i<4; i++) {
         if(!tanks[i].active) continue;
         int16_t lbx = (int16_t)tanks[i].last_ball_x - cam_x; int16_t lby = (int16_t)tanks[i].last_ball_y - cam_y + VP_Y_OFFSET;
-        SafeClear(lbx-2, lby-2, 5, 5, UI_BG);
+        if(lbx >= 5 && lbx <= 235 && lby >= VP_Y_OFFSET + 5 && lby <= 315) {
+            LCD_Clear(lbx-2, lby-2, 5, 5, UI_BG);
+        }
         
         if(tanks[i].ball_active) {
             int16_t bx = (int16_t)tanks[i].ball_x - cam_x; int16_t by = (int16_t)tanks[i].ball_y - cam_y + VP_Y_OFFSET;
             uint16_t b_color = (tanks[i].ball_bounces == 0) ? RED : (tanks[i].ball_bounces == 1) ? YELLOW : MY_ORANGE;
-            SafeClear(bx-2, by-2, 5, 5, b_color);
+            if(bx >= 5 && bx <= 235 && by >= VP_Y_OFFSET + 5 && by <= 315) {
+                LCD_Clear(bx-2, by-2, 5, 5, b_color);
+            }
             tanks[i].last_ball_x = tanks[i].ball_x; tanks[i].last_ball_y = tanks[i].ball_y;
         }
 
         int16_t tx = (int16_t)tanks[i].x - cam_x, ty = (int16_t)tanks[i].y - cam_y + VP_Y_OFFSET;
-        SafeClear(tx-7, ty-7, 15, 15, tank_colors[i]); 
-        
-        SafeDrawLine(tx-7, ty-7, tx+7, ty-7, BLACK);
-        SafeDrawLine(tx-7, ty+7, tx+7, ty+7, BLACK);
-        SafeDrawLine(tx-7, ty-7, tx-7, ty+7, BLACK);
-        SafeDrawLine(tx+7, ty-7, tx+7, ty+7, BLACK);
-        
-        float rad = tanks[i].angle * 3.14159f / 180.0f;
-        SafeDrawLine(tx, ty, tx + (int16_t)(18 * cos(rad)), ty + (int16_t)(18 * sin(rad)), BLACK);
-        
+        if (tx >= 10 && tx <= 230 && ty >= VP_Y_OFFSET + 10 && ty <= 310) {
+            LCD_Clear(tx-7, ty-7, 15, 15, tank_colors[i]); 
+            LCD_DrawRectangle(tx-7, ty-7, 15, 15, BLACK);
+            float rad = tanks[i].angle * 3.14159f / 180.0f;
+            LCD_DrawLine(tx, ty, tx + (int16_t)(18 * cos(rad)), ty + (int16_t)(18 * sin(rad)), BLACK);
+        }
         tanks[i].last_x = tanks[i].x; tanks[i].last_y = tanks[i].y; tanks[i].last_angle = tanks[i].angle;
     }
 }
@@ -635,12 +612,6 @@ void Mode3_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
                 for (int j=0; j<4; j++) {
                     float cx=nx+os[j][0], cy=ny+os[j][1]; int r=(int)cy/TILE_SIZE, c=(int)cx/TILE_SIZE;
                     if (cx<2 || cx>world_w-2 || cy<2 || cy>world_h-2 || (r>=0 && r<100 && c>=0 && c<80 && arena_grid[r][c]==TILE_WALL)) { can=0; break; }
-                }
-                if (can) {
-                    for(int k=0; k<4; k++) {
-                        if (k == i || !tanks[k].active || tanks[k].hp <= 0) continue;
-                        if (abs((int)nx - (int)tanks[k].x) < 15 && abs((int)ny - (int)tanks[k].y) < 15) { can = 0; break; }
-                    }
                 }
                 if (can) { tanks[i].x = nx; tanks[i].y = ny; }
             }
