@@ -141,29 +141,6 @@ void SEG_StartCooldownCountdown(uint32_t cooldown_ms)
     SEG_ShowTenths(seg_tenths);
 }
 
-void SEG_ShowCustom(uint8_t left_bits, uint8_t right_bits)
-{
-    seg_mode = SEG_MODE2_CMD; // Use a mode that prevents IDLE override
-    
-    // Left Bits: bit0=A, bit1=B, bit2=C, bit3=D, bit4=E, bit5=F, bit6=G
-    SEG_WritePin(LSEG_A_PORT, LSEG_A_PIN, (left_bits >> 0) & 1);
-    SEG_WritePin(LSEG_B_PORT, LSEG_B_PIN, (left_bits >> 1) & 1);
-    SEG_WritePin(LSEG_C_PORT, LSEG_C_PIN, (left_bits >> 2) & 1);
-    SEG_WritePin(LSEG_D_PORT, LSEG_D_PIN, (left_bits >> 3) & 1);
-    SEG_WritePin(LSEG_E_PORT, LSEG_E_PIN, (left_bits >> 4) & 1);
-    SEG_WritePin(LSEG_F_PORT, LSEG_F_PIN, (left_bits >> 5) & 1);
-    SEG_WritePin(LSEG_G_PORT, LSEG_G_PIN, (left_bits >> 6) & 1);
-    SEG_WritePin(LSEG_DP_PORT, LSEG_DP_PIN, 0);
-
-    SEG_WritePin(RSEG_A_PORT, RSEG_A_PIN, (right_bits >> 0) & 1);
-    SEG_WritePin(RSEG_B_PORT, RSEG_B_PIN, (right_bits >> 1) & 1);
-    SEG_WritePin(RSEG_C_PORT, RSEG_C_PIN, (right_bits >> 2) & 1);
-    SEG_WritePin(RSEG_D_PORT, RSEG_D_PIN, (right_bits >> 3) & 1);
-    SEG_WritePin(RSEG_E_PORT, RSEG_E_PIN, (right_bits >> 4) & 1);
-    SEG_WritePin(RSEG_F_PORT, RSEG_F_PIN, (right_bits >> 5) & 1);
-    SEG_WritePin(RSEG_G_PORT, RSEG_G_PIN, (right_bits >> 6) & 1);
-}
-
 void SEG_Task(void)
 {
     uint32_t now = HAL_GetTick();
@@ -189,29 +166,12 @@ void SEG_Task(void)
         }
         break;
 
-    case SEG_M2_TIMER:
-        // seg_tenths contains remaining_time_ms / 100
-        if (seg_tenths > 100) { // > 10.0 seconds
-            // Update every 1 second (10 tenths)
-            uint8_t secs = (uint8_t)(seg_tenths / 10);
-            SEG_ShowPair(secs / 10, secs % 10, 0);
-        } else {
-            // Update every 0.1 second (1 tenth)
-            SEG_ShowTenths(seg_tenths);
-        }
-        break;
-
     case SEG_ZERO_HOLD:
         if ((now - seg_tick) >= 1000U)
         {
             SEG_ShowPair(0, 0, 0);
             seg_mode = SEG_IDLE;
         }
-        break;
-
-    case SEG_MODE2_CMD:
-    case SEG_M3_OBSTACLES:
-        // Stay as set by SEG_ShowCmd or SEG_ShowCustom
         break;
 
     case SEG_IDLE:

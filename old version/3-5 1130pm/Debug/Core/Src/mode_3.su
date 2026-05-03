@@ -1,0 +1,7 @@
+../Core/Src/mode_3.c:47:6:Mode3_Init	8	static
+../Core/Src/mode_3.c:53:13:Mode3_GenerateWorld	56	static
+../Core/Src/mode_3.c:94:13:DrawGridCell	40	static
+../Core/Src/mode_3.c:122:13:Mode3_RenderArena	96	static
+../Core/Src/mode_3.c:166:6:LCD_DrawMode3Setup	16	static
+../Core/Src/mode_3.c:176:6:LCD_UpdateMode3Setup	24	static
+../Core/Src/mode_3.c:196:6:Mode3_Run	104	static

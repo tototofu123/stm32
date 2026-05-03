@@ -1,4 +1,4 @@
-Core/Src/mode_2.o: ../Core/Src/mode_2.c ../Core/Inc/mode_2.h \
+Core/Src/mode_3.o: ../Core/Src/mode_3.c ../Core/Inc/mode_3.h \
  ../Core/Inc/main.h \
  C:/Users/totot/STM32Cube/Repository/STM32Cube_FW_F1_V1.8.4/Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal.h \
  ../Core/Inc/stm32f1xx_hal_conf.h \
@@ -28,10 +28,9 @@ Core/Src/mode_2.o: ../Core/Src/mode_2.c ../Core/Inc/mode_2.h \
  C:/Users/totot/STM32Cube/Repository/STM32Cube_FW_F1_V1.8.4/Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_i2c.h \
  C:/Users/totot/STM32Cube/Repository/STM32Cube_FW_F1_V1.8.4/Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_pwr.h \
  C:/Users/totot/STM32Cube/Repository/STM32Cube_FW_F1_V1.8.4/Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_uart.h \
- ../Core/Inc/game_logic.h ../Core/Inc/lcd.h ../Core/Inc/ui.h \
- ../Core/Inc/game_logic.h ../Core/Inc/alerts.h ../Core/Inc/seven_seg.h \
- ../Core/Inc/peripherals.h ../Core/Inc/alerts.h
-../Core/Inc/mode_2.h:
+ ../Core/Inc/lcd.h ../Core/Inc/ui.h ../Core/Inc/game_logic.h \
+ ../Core/Inc/alerts.h
+../Core/Inc/mode_3.h:
 ../Core/Inc/main.h:
 C:/Users/totot/STM32Cube/Repository/STM32Cube_FW_F1_V1.8.4/Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal.h:
 ../Core/Inc/stm32f1xx_hal_conf.h:
@@ -61,11 +60,7 @@ C:/Users/totot/STM32Cube/Repository/STM32Cube_FW_F1_V1.8.4/Drivers/STM32F1xx_HAL
 C:/Users/totot/STM32Cube/Repository/STM32Cube_FW_F1_V1.8.4/Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_i2c.h:
 C:/Users/totot/STM32Cube/Repository/STM32Cube_FW_F1_V1.8.4/Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_pwr.h:
 C:/Users/totot/STM32Cube/Repository/STM32Cube_FW_F1_V1.8.4/Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_uart.h:
-../Core/Inc/game_logic.h:
 ../Core/Inc/lcd.h:
 ../Core/Inc/ui.h:
 ../Core/Inc/game_logic.h:
-../Core/Inc/alerts.h:
-../Core/Inc/seven_seg.h:
-../Core/Inc/peripherals.h:
 ../Core/Inc/alerts.h:

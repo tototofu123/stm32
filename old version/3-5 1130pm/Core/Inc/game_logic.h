@@ -48,17 +48,9 @@ typedef enum {
 #define LASER_FIRE_MS       1000U
 #define LASER_COOLDOWN_MS   3000U
 
-extern uint32_t x_left_thresh;
-extern uint32_t x_right_thresh;
-extern uint32_t y_fwd_thresh;
-extern uint32_t y_back_thresh;
-extern uint32_t adc_center_x;
-extern uint32_t adc_center_y;
-
-#define X_LEFT_THRESH_ADC   x_left_thresh
-#define X_RIGHT_THRESH_ADC  x_right_thresh
-#define Y_FWD_THRESH_ADC    y_fwd_thresh
-#define Y_BACK_THRESH_ADC   y_back_thresh
+#define X_LEFT_THRESH_ADC   2234U
+#define X_RIGHT_THRESH_ADC  3474U
+#define Y_FWD_THRESH_ADC    1200U
 #define ADC_MIN             0U
 #define ADC_MAX             4095U
 #define MOTOR_CMD_INTERVAL  80U

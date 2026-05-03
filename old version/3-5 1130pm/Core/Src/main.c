@@ -54,13 +54,6 @@ GPIO_PinState last_cap_state = GPIO_PIN_SET;
 uint32_t last_k1_event_tick = 0U;
 uint32_t last_k2_event_tick = 0U;
 
-uint32_t x_left_thresh = 1500U;
-uint32_t x_right_thresh = 2500U;
-uint32_t y_fwd_thresh = 1500U;
-uint32_t y_back_thresh = 2500U;
-uint32_t adc_center_x = 2048U;
-uint32_t adc_center_y = 2048U;
-
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_FSMC_Init(void);
@@ -82,20 +75,6 @@ int main(void)
 
     HAL_ADCEx_Calibration_Start(&hadc1);
     HAL_ADCEx_Calibration_Start(&hadc2);
-    
-    // Joystick auto-calibration
-    uint32_t cx = read_adc1();
-    uint32_t cy = read_adc2();
-    if(cx > 500 && cx < 3500) {
-        adc_center_x = cx;
-        x_left_thresh = cx - 500;
-        x_right_thresh = cx + 500;
-    }
-    if(cy > 500 && cy < 3500) {
-        adc_center_y = cy;
-        y_fwd_thresh = cy - 500;
-        y_back_thresh = cy + 500;
-    }
 
     HAL_GPIO_WritePin(LASER_PORT, LASER_PIN, GPIO_PIN_RESET);
     Buzzer_Set(0);
@@ -117,14 +96,6 @@ int main(void)
         uint32_t x_raw = read_adc1();
         uint32_t y_raw = read_adc2();
         
-        // Joystick direction pulses
-        static uint8_t last_j_up = 0, last_j_down = 0, last_j_left = 0, last_j_right = 0;
-        uint8_t joy_up = 0, joy_down = 0, joy_left = 0, joy_right = 0;
-        if (y_raw < Y_FWD_THRESH_ADC) { if(!last_j_up) joy_up = 1; last_j_up = 1; } else last_j_up = 0;
-        if (y_raw > Y_BACK_THRESH_ADC) { if(!last_j_down) joy_down = 1; last_j_down = 1; } else last_j_down = 0;
-        if (x_raw < X_LEFT_THRESH_ADC) { if(!last_j_left) joy_left = 1; last_j_left = 1; } else last_j_left = 0;
-        if (x_raw > X_RIGHT_THRESH_ADC) { if(!last_j_right) joy_right = 1; last_j_right = 1; } else last_j_right = 0;
-
         GPIO_PinState k1_now = HAL_GPIO_ReadPin(K1_PORT, K1_PIN);
         GPIO_PinState k2_now = HAL_GPIO_ReadPin(K2_PORT, K2_PIN);
         GPIO_PinState cap_now = HAL_GPIO_ReadPin(CAP_TOUCH_PORT, CAP_TOUCH_PIN);
@@ -240,15 +211,12 @@ int main(void)
             if (ts_click) {
                 if (px >= 20 && px <= 220) {
                     game_mode_t new_mode = selected_mode;
-                    uint8_t hit = 0;
-                    if (py >= 70 && py <= 110) { new_mode = GAME_MODE_1; hit = 1; }
-                    else if (py >= 125 && py <= 165) { new_mode = GAME_MODE_2; hit = 1; }
-                    else if (py >= 180 && py <= 220) { new_mode = GAME_MODE_3; hit = 1; }
+                    if (py >= 70 && py <= 110) new_mode = GAME_MODE_1;
+                    else if (py >= 125 && py <= 165) new_mode = GAME_MODE_2;
+                    else if (py >= 180 && py <= 220) new_mode = GAME_MODE_3;
                     
-                    if (hit) {
-                        if (new_mode == selected_mode) { app_state = APP_MODE_CONFIRM; Buzzer_BeepShort(); }
-                        else { selected_mode = new_mode; LCD_UpdateModeSelection(); Buzzer_BeepShort(); }
-                    }
+                    if (new_mode == selected_mode) { app_state = APP_MODE_CONFIRM; Buzzer_BeepShort(); }
+                    else { selected_mode = new_mode; LCD_UpdateModeSelection(); Buzzer_BeepShort(); }
                 }
             }
             if (selected_mode != last_drawn_mode) { LCD_UpdateModeSelection(); last_drawn_mode = selected_mode; }
@@ -305,15 +273,8 @@ int main(void)
                 if (now - lcd_fast_tick >= LCD_FAST_UPDATE_MS) { LCD_UpdateGameFast(x_raw, y_raw); lcd_fast_tick = now; }
                 if (now - lcd_slow_tick >= LCD_SLOW_UPDATE_MS) { LCD_UpdateGameSlow(fire_pressed); lcd_slow_tick = now; }
             }
-            else if (selected_mode == GAME_MODE_2) Mode2_Run(x_raw, y_raw, k1_click, k2_click, fire_pressed, ts_pressed, ts_click, px, py, joy_up, joy_down, joy_left, joy_right);
-            else if (selected_mode == GAME_MODE_3) Mode3_Run(x_raw, y_raw, k1_click, k2_click, fire_pressed, ts_pressed, ts_click, px, py, joy_up, joy_down, joy_left, joy_right);
-        }
-
-        // Default 7-Segment Telemetry
-        if (seg_mode == SEG_IDLE) {
-            uint8_t left = (uint8_t)selected_mode + 1;
-            uint8_t right = (selected_mode == GAME_MODE_1) ? (uint8_t)selected_car : 0;
-            SEG_ShowPair(left, right, 0);
+            else if (selected_mode == GAME_MODE_2) Mode2_Run(x_raw, y_raw, k1_click, k2_click, fire_pressed, ts_pressed, ts_click, px, py);
+            else if (selected_mode == GAME_MODE_3) Mode3_Run(x_raw, y_raw, k1_click, k2_click, fire_pressed, ts_pressed, ts_click, px, py);
         }
 
         Buzzer_Task();

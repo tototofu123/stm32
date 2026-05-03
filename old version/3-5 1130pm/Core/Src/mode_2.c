@@ -5,7 +5,6 @@
 #include "ui.h"
 #include "alerts.h"
 #include "seven_seg.h"
-#include "peripherals.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -50,7 +49,7 @@ void Mode2_Init(void) {
     Buzzer_SetMute(1);  
     LCD_Clear(0, 0, 240, 320, UI_BG);
     LCD_DrawMode2InputSelect();
-    SEG_ShowPair(0, 1, 0); 
+    SEG_ShowCmd('S'); 
 }
 
 void Mode2_ResetCanvas(void) {
@@ -73,7 +72,7 @@ void Mode2_ResetCanvas(void) {
     strcpy(motion_line, "READY");
     m2_state = M2_STATE_DRAWING;
     LCD_DrawMode2Canvas();
-    seg_mode = SEG_M2_TIMER; seg_tenths = 0;
+    SEG_ShowCmd('S');
 }
 
 static void DrawCanvasArrow(uint16_t x, uint16_t y, int dx, int dy, uint16_t color)
@@ -121,19 +120,18 @@ static uint16_t GetTimeColor(uint32_t ms) {
 }
 
 void Mode2_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_click, 
-               uint8_t fire_pressed, uint8_t ts_pressed, uint8_t ts_click, uint16_t ts_x, uint16_t ts_y,
-               uint8_t joy_up, uint8_t joy_down, uint8_t joy_left, uint8_t joy_right) {
+               uint8_t fire_pressed, uint8_t ts_pressed, uint8_t ts_click, uint16_t ts_x, uint16_t ts_y) {
     uint32_t now = HAL_GetTick();
 
     if (m2_state == M2_STATE_INPUT_SELECT) {
-        if (k1_click || joy_up || joy_down) { selected_input = (selected_input == M2_INPUT_JOYSTICK) ? M2_INPUT_TOUCH : M2_INPUT_JOYSTICK; LCD_UpdateMode2InputSelect(); SEG_ShowPair(0, selected_input + 1, 0); Buzzer_BeepShort(); HAL_Delay(50); }
+        if (k1_click) { selected_input = (selected_input == M2_INPUT_JOYSTICK) ? M2_INPUT_TOUCH : M2_INPUT_JOYSTICK; LCD_UpdateMode2InputSelect(); Buzzer_BeepShort(); HAL_Delay(50); }
         if (ts_click) {
             mode2_input_method_t touched_input = selected_input; uint8_t hit = 0;
             if (ts_y >= 70 && ts_y <= 150) { touched_input = M2_INPUT_JOYSTICK; hit = 1; }
             else if (ts_y >= 170 && ts_y <= 250) { touched_input = M2_INPUT_TOUCH; hit = 1; }
             if (hit) {
                 if (touched_input == selected_input) { m2_input_method = selected_input; Buzzer_BeepShort(); Mode2_ResetCanvas(); return; }
-                else { selected_input = touched_input; LCD_UpdateMode2InputSelect(); SEG_ShowPair(0, selected_input + 1, 0); Buzzer_BeepShort(); HAL_Delay(50); }
+                else { selected_input = touched_input; LCD_UpdateMode2InputSelect(); Buzzer_BeepShort(); HAL_Delay(50); }
             }
         }
         if (k2_click) { m2_input_method = selected_input; Buzzer_BeepShort(); Mode2_ResetCanvas(); }
@@ -145,7 +143,7 @@ void Mode2_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
             if (joy_x < X_LEFT_THRESH_ADC && m2_cursor_x > CANVAS_X_MIN) m2_cursor_x -= 3;
             if (joy_x > X_RIGHT_THRESH_ADC && m2_cursor_x < CANVAS_X_MAX) m2_cursor_x += 3;
             if (joy_y < Y_FWD_THRESH_ADC && m2_cursor_y > CANVAS_Y_MIN) m2_cursor_y -= 3;
-            if (joy_y > Y_BACK_THRESH_ADC && m2_cursor_y < CANVAS_Y_MAX) m2_cursor_y += 3;
+            if (joy_y > 3000 && m2_cursor_y < CANVAS_Y_MAX) m2_cursor_y += 3;
         } 
         else {  
             if (ts_pressed && ts_x >= CANVAS_X_MIN && ts_x <= CANVAS_X_MAX && ts_y >= CANVAS_Y_MIN && ts_y <= CANVAS_Y_MAX) {
@@ -173,7 +171,6 @@ void Mode2_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
             LCD_Clear(m2_cursor_x - 5, m2_cursor_y - 5, 11, 11, current_color);
             LCD_Clear(m2_cursor_x - 2, m2_cursor_y - 2, 5, 5, (current_color == BLACK) ? WHITE : BLACK); 
             LCD_DrawMode2Stats(m2_path_count, MAX_POINTS, total_path_distance, remaining_time_ms / 1000);
-            seg_tenths = remaining_time_ms / 100;
         }
 
         if (old_x != m2_cursor_x || old_y != m2_cursor_y) {
@@ -197,7 +194,6 @@ void Mode2_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
                 dist = (int)sqrt((m2_cursor_x - m2_path_x[m2_path_count-1])*(m2_cursor_x - m2_path_x[m2_path_count-1]) + 
                                  (m2_cursor_y - m2_path_y[m2_path_count-1])*(m2_cursor_y - m2_path_y[m2_path_count-1]));
             }
-            seg_tenths = remaining_time_ms / 100;
         }
 
         if (k1_click) { LCD_DrawMode2ResetConfirm(); m2_state = M2_STATE_RESET_CONFIRM; }
@@ -236,10 +232,9 @@ void Mode2_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
         }
 
         LCD_DrawMode2Stats(covered_distance, total_path_distance, total_path_distance, remaining_time_ms / 1000);
-        seg_tenths = remaining_time_ms / 100;
 
         if (target_pt_idx >= m2_path_count) {
-            Motor_SendCmd('S', 0); SEG_ShowPair(0, 0, 0); seg_mode = SEG_IDLE;
+            Motor_SendCmd('S', 0); SEG_ShowCmd('S');
             LCD_SetColors(RED, UI_BG); 
             LCD_ClearTextField(150, 22, 11, UI_BG);
             LCD_TEXT(150, 22, "READY! (K1)"); 
@@ -257,7 +252,7 @@ void Mode2_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
             uint32_t seg_dist = (uint32_t)sqrt(dx*dx + dy*dy);
             uint32_t duration = seg_dist * 12; 
             if (duration > 0) {
-                Motor_SendCmd(cmd, 60);
+                Motor_SendCmd(cmd, 60); SEG_ShowCmd(cmd);
                 uint8_t prev_slot = (history_slot == 0) ? 9 : (history_slot - 1);
                 if (last_history_cmd != ' ') LCD_DrawMode2CommandHistory(last_history_cmd, prev_slot, 0); 
                 LCD_DrawMode2CommandHistory(cmd, history_slot, 1); 
@@ -266,7 +261,6 @@ void Mode2_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
                 if (remaining_time_ms > duration) remaining_time_ms -= duration; else remaining_time_ms = 0;
                 move_timer = now + duration; target_pt_idx++;
             } else { target_pt_idx++; }
-            seg_tenths = remaining_time_ms / 100;
         }
     } 
     else if (m2_state == M2_STATE_SHOOTING) {

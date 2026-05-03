@@ -11,7 +11,6 @@
 // Colors
 #define UI_BG               WHITE
 #define UI_HEAD             CYAN
-#define UI_TOP              UI_HEAD
 #define UI_BOX_SEL          GREEN
 #define UI_BOX_NSEL         YELLOW
 #define UI_BOTTOM           MAGENTA
