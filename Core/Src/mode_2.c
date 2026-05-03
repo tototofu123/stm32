@@ -124,17 +124,17 @@ void Mode2_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
     uint32_t now = HAL_GetTick();
 
     if (m2_state == M2_STATE_INPUT_SELECT) {
-        if (k1_click) { selected_input = (selected_input == M2_INPUT_JOYSTICK) ? M2_INPUT_TOUCH : M2_INPUT_JOYSTICK; LCD_UpdateMode2InputSelect(); HAL_Delay(50); }
+        if (k1_click) { selected_input = (selected_input == M2_INPUT_JOYSTICK) ? M2_INPUT_TOUCH : M2_INPUT_JOYSTICK; LCD_UpdateMode2InputSelect(); Buzzer_BeepShort(); HAL_Delay(50); }
         if (ts_click) {
             mode2_input_method_t touched_input = selected_input; uint8_t hit = 0;
             if (ts_y >= 70 && ts_y <= 150) { touched_input = M2_INPUT_JOYSTICK; hit = 1; }
             else if (ts_y >= 170 && ts_y <= 250) { touched_input = M2_INPUT_TOUCH; hit = 1; }
             if (hit) {
-                if (touched_input == selected_input) { m2_input_method = selected_input; Mode2_ResetCanvas(); return; }
-                else { selected_input = touched_input; LCD_UpdateMode2InputSelect(); HAL_Delay(50); }
+                if (touched_input == selected_input) { m2_input_method = selected_input; Buzzer_BeepShort(); Mode2_ResetCanvas(); return; }
+                else { selected_input = touched_input; LCD_UpdateMode2InputSelect(); Buzzer_BeepShort(); HAL_Delay(50); }
             }
         }
-        if (k2_click) { m2_input_method = selected_input; Mode2_ResetCanvas(); }
+        if (k2_click) { m2_input_method = selected_input; Buzzer_BeepShort(); Mode2_ResetCanvas(); }
     }
     else if (m2_state == M2_STATE_DRAWING) {
         uint16_t old_x = m2_cursor_x; uint16_t old_y = m2_cursor_y;

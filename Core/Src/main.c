@@ -101,16 +101,13 @@ int main(void)
         GPIO_PinState cap_now = HAL_GPIO_ReadPin(CAP_TOUCH_PORT, CAP_TOUCH_PIN);
         GPIO_PinState joy_sw_now = HAL_GPIO_ReadPin(JOY_SW_PORT, JOY_SW_PIN);
 
-        // --- 1. FIRE INPUT (Joystick Button) ---
         uint8_t fire_pressed = (joy_sw_now == GPIO_PIN_RESET) ? 1 : 0;
         
-        // --- 2. SPECIAL ABILITY (Capacitive Touch) ---
         if (cap_now == GPIO_PIN_RESET && last_cap_state == GPIO_PIN_SET) {
             SpecialAbility_ResetCooldown();
         }
         last_cap_state = cap_now;
         
-        // --- 3. RESISTIVE TOUCH SCREEN ---
         uint8_t ts_pressed = TouchPressed();
         uint8_t ts_click = 0;
         uint16_t px = 0, py = 0;
@@ -132,7 +129,6 @@ int main(void)
             last_ts_state_mem = 1;
         } else { last_ts_state_mem = 0; }
 
-        // Button Clicks
         uint8_t k1_click = 0U, k2_click = 0U;
         if ((k1_now == GPIO_PIN_SET) && (last_k1_state == GPIO_PIN_RESET) && ((now - last_k1_event_tick) >= BTN_DEBOUNCE_MS))
         { k1_click = 1U; last_k1_event_tick = now; }
@@ -142,7 +138,6 @@ int main(void)
         { k2_click = 1U; last_k2_event_tick = now; }
         last_k2_state = k2_now;
 
-        // MASTER UI RENDERER
         if (app_state != last_drawn_state)
         {
             if (app_state == APP_HOME)          LCD_DrawHome();
@@ -160,7 +155,6 @@ int main(void)
             last_drawn_state = app_state;
         }
 
-        // LOGIC ENGINE
         if (app_state == APP_HOME) {
             if (ts_click) {
                 if (px >= 20 && px <= 220) {
@@ -168,8 +162,8 @@ int main(void)
                     else if (py >= 180 && py <= 240) { app_state = APP_SETTINGS; Buzzer_BeepShort(); }
                 }
             }
-            if (k1_click) app_state = APP_MODE_SELECT;
-            if (k2_click) app_state = APP_SETTINGS;
+            if (k1_click) { app_state = APP_MODE_SELECT; Buzzer_BeepShort(); }
+            if (k2_click) { app_state = APP_SETTINGS; Buzzer_BeepShort(); }
         }
         else if (app_state == APP_SETTINGS) {
             if (k1_click) app_state = APP_HOME;
@@ -212,8 +206,8 @@ int main(void)
             }
         }
         else if (app_state == APP_MODE_SELECT) {
-            if (k1_click) selected_mode = (game_mode_t)(((uint8_t)selected_mode + 1U) % 3U);
-            if (k2_click) app_state = APP_MODE_CONFIRM;
+            if (k1_click) { selected_mode = (game_mode_t)(((uint8_t)selected_mode + 1U) % 3U); Buzzer_BeepShort(); }
+            if (k2_click) { app_state = APP_MODE_CONFIRM; Buzzer_BeepShort(); }
             if (ts_click) {
                 if (px >= 20 && px <= 220) {
                     game_mode_t new_mode = selected_mode;
@@ -221,22 +215,24 @@ int main(void)
                     else if (py >= 125 && py <= 165) new_mode = GAME_MODE_2;
                     else if (py >= 180 && py <= 220) new_mode = GAME_MODE_3;
                     
-                    if (new_mode == selected_mode) app_state = APP_MODE_CONFIRM;
-                    else { selected_mode = new_mode; LCD_UpdateModeSelection(); }
+                    if (new_mode == selected_mode) { app_state = APP_MODE_CONFIRM; Buzzer_BeepShort(); }
+                    else { selected_mode = new_mode; LCD_UpdateModeSelection(); Buzzer_BeepShort(); }
                 }
             }
             if (selected_mode != last_drawn_mode) { LCD_UpdateModeSelection(); last_drawn_mode = selected_mode; }
         }
         else if (app_state == APP_MODE_CONFIRM) {
-            if (k1_click) app_state = APP_MODE_SELECT;
+            if (k1_click) { app_state = APP_MODE_SELECT; Buzzer_BeepShort(); }
             if (k2_click) {
+                Buzzer_BeepShort();
                 if (selected_mode == GAME_MODE_2 || selected_mode == GAME_MODE_3) app_state = APP_GAME;
                 else app_state = APP_CAR_SELECT;
             }
             if (ts_click) {
                 if (py >= 195 && py <= 230) {
-                    if (px >= 30 && px <= 110) app_state = APP_MODE_SELECT;
+                    if (px >= 30 && px <= 110) { app_state = APP_MODE_SELECT; Buzzer_BeepShort(); }
                     else if (px >= 130 && px <= 210) {
+                        Buzzer_BeepShort();
                         if (selected_mode == GAME_MODE_2 || selected_mode == GAME_MODE_3) app_state = APP_GAME;
                         else app_state = APP_CAR_SELECT;
                     }
@@ -244,32 +240,31 @@ int main(void)
             }
         }
         else if (app_state == APP_CAR_SELECT) {
-            if (k1_click) selected_car = (car_type_t)(((uint8_t)selected_car + 1U) % 7U);
-            if (k2_click) app_state = APP_CAR_CONFIRM;
+            if (k1_click) { selected_car = (car_type_t)(((uint8_t)selected_car + 1U) % 7U); Buzzer_BeepShort(); }
+            if (k2_click) { app_state = APP_CAR_CONFIRM; Buzzer_BeepShort(); }
             if (ts_click) {
                 if (px >= 14 && px <= 226) {
                     int idx = (py - 64) / 24;
                     if (idx >= 0 && idx <= 6) {
                         car_type_t new_car = (car_type_t)idx;
-                        if (new_car == selected_car) app_state = APP_CAR_CONFIRM;
-                        else { selected_car = new_car; LCD_UpdateCarSelection(); }
+                        if (new_car == selected_car) { app_state = APP_CAR_CONFIRM; Buzzer_BeepShort(); }
+                        else { selected_car = new_car; LCD_UpdateCarSelection(); Buzzer_BeepShort(); }
                     }
                 }
             }
             if (selected_car != last_drawn_car) { LCD_UpdateCarSelection(); last_drawn_car = selected_car; }
         }
         else if (app_state == APP_CAR_CONFIRM) {
-            if (k1_click) app_state = APP_CAR_SELECT;
-            if (k2_click) app_state = APP_GAME;
+            if (k1_click) { app_state = APP_CAR_SELECT; Buzzer_BeepShort(); }
+            if (k2_click) { app_state = APP_GAME; Buzzer_BeepShort(); }
             if (ts_click) {
                 if (py >= 195 && py <= 230) {
-                    if (px >= 30 && px <= 110) app_state = APP_CAR_SELECT;
-                    else if (px >= 130 && px <= 210) app_state = APP_GAME;
+                    if (px >= 30 && px <= 110) { app_state = APP_CAR_SELECT; Buzzer_BeepShort(); }
+                    else if (px >= 130 && px <= 210) { app_state = APP_GAME; Buzzer_BeepShort(); }
                 }
             }
         }
         else if (app_state == APP_GAME) {
-            // Restore Original Laser/LED Loop Logic
             laser_update();
             RGB_Update_From_State();
 
@@ -294,21 +289,21 @@ void SystemClock_Config(void)
     RCC_ClkInitTypeDef       c = {0};
     RCC_PeriphCLKInitTypeDef p = {0};
     o.OscillatorType = RCC_OSCILLATORTYPE_HSE;
-    o.HSEState = RCC_HSE_ON;
+    o.HSEState       = RCC_HSE_ON;
     o.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
-    o.HSIState = RCC_HSI_ON;
-    o.PLL.PLLState = RCC_PLL_ON;
-    o.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+    o.HSIState       = RCC_HSI_ON;
+    o.PLL.PLLState   = RCC_PLL_ON;
+    o.PLL.PLLSource  = RCC_PLLSOURCE_HSE;
     o.PLL.PLLMUL     = RCC_PLL_MUL9;
     if (HAL_RCC_OscConfig(&o) != HAL_OK) Error_Handler();
-    c.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
-    c.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
-    c.AHBCLKDivider = RCC_SYSCLK_DIV1;
+    c.ClockType      = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
+    c.SYSCLKSource   = RCC_SYSCLKSOURCE_PLLCLK;
+    c.AHBCLKDivider  = RCC_SYSCLK_DIV1;
     c.APB1CLKDivider = RCC_HCLK_DIV2;
     c.APB2CLKDivider = RCC_HCLK_DIV1;
     if (HAL_RCC_ClockConfig(&c, FLASH_LATENCY_2) != HAL_OK) Error_Handler();
     p.PeriphClockSelection = RCC_PERIPHCLK_ADC;
-    p.AdcClockSelection = RCC_ADCPCLK2_DIV6;
+    p.AdcClockSelection    = RCC_ADCPCLK2_DIV6;
     if (HAL_RCCEx_PeriphCLKConfig(&p) != HAL_OK) Error_Handler();
 }
 
@@ -362,13 +357,13 @@ static void MX_I2C2_Init(void)
 
 static void MX_USART3_UART_Init(void)
 {
-    huart3.Instance          = USART3;
-    huart3.Init.BaudRate     = 115200;
-    huart3.Init.WordLength   = UART_WORDLENGTH_8B;
-    huart3.Init.StopBits     = UART_STOPBITS_1;
-    huart3.Init.Parity       = UART_PARITY_NONE;
-    huart3.Init.Mode         = UART_MODE_TX_RX;
-    huart3.Init.HwFlowCtl    = UART_HWCONTROL_NONE;
+    huart3.Instance = USART3;
+    huart3.Init.BaudRate = 115200;
+    huart3.Init.WordLength = UART_WORDLENGTH_8B;
+    huart3.Init.StopBits = UART_STOPBITS_1;
+    huart3.Init.Parity = UART_PARITY_NONE;
+    huart3.Init.Mode = UART_MODE_TX_RX;
+    huart3.Init.HwFlowCtl = UART_HWCONTROL_NONE;
     huart3.Init.OverSampling = UART_OVERSAMPLING_16;
     if (HAL_UART_Init(&huart3) != HAL_OK) Error_Handler();
 }
