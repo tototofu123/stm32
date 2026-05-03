@@ -65,6 +65,7 @@ void            LCD_OpenWindow		( uint16_t usC, uint16_t usP, uint16_t usWidth, 
 void            LCD_Clear		( uint16_t usC, uint16_t usP, uint16_t usWidth, uint16_t usHeight, uint16_t usColor );
 uint16_t        LCD_GetPointPixel	( uint16_t usC , uint16_t usP );
 void            LCD_DrawLine		( uint16_t usC1, uint16_t usP1, uint16_t usC2, uint16_t usP2, uint16_t usColor );
+void            LCD_DrawRectangle	( uint16_t usC, uint16_t usP, uint16_t usWidth, uint16_t usHeight, uint16_t usColor );
 void            LCD_DrawChar		( uint16_t usC, uint16_t usP, const char cChar);
 void            LCD_DrawString		( uint16_t usC, uint16_t usP, const char * pStr);
 void            LCD_SetColors		( uint16_t text, uint16_t back );
@@ -73,4 +74,3 @@ void 		LCD_DrawEllipse		( uint16_t usC, uint16_t usP, uint16_t SR, uint16_t LR, 
 
 void LCD_DrawChinese(uint16_t usC, uint16_t usP, const uint8_t *bitmap);
 #endif 
-

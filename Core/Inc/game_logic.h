@@ -8,6 +8,7 @@
 typedef enum {
     APP_HOME = 0,
     APP_SETTINGS,
+    APP_WIFI_KEYBOARD,
     APP_MODE_SELECT,
     APP_MODE_CONFIRM,
     APP_CAR_SELECT,
@@ -85,6 +86,7 @@ void Fire_SendCmd(uint8_t fire_on);
 void laser_on_press(void);
 void laser_on_release(void);
 void laser_update(void);
+void SpecialAbility_ResetCooldown(void);
 void RGB_Update_From_State(void);
 
 // Central Game Router

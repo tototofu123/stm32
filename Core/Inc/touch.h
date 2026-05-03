@@ -30,6 +30,5 @@
 uint8_t  TouchPressed(void);
 uint16_t TouchReadXRaw(void);
 uint16_t TouchReadYRaw(void);
-uint16_t map_u16(uint16_t v, uint16_t in_min, uint16_t in_max, uint16_t out_min, uint16_t out_max);
 
 #endif // TOUCH_H

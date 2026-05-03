@@ -6,4 +6,3 @@
 ../Core/Src/touch.c:47:9:TouchPressed	8	static
 ../Core/Src/touch.c:52:10:TouchReadXRaw	8	static
 ../Core/Src/touch.c:57:10:TouchReadYRaw	8	static
-../Core/Src/touch.c:62:10:map_u16	16	static

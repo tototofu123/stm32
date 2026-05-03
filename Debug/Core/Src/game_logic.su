@@ -15,6 +15,7 @@
 ../Core/Src/game_logic.c:206:6:laser_on_press	4	static
 ../Core/Src/game_logic.c:213:6:laser_on_release	8	static
 ../Core/Src/game_logic.c:221:6:laser_update	48	static
-../Core/Src/game_logic.c:295:6:RGB_Update_From_State	8	static
-../Core/Src/game_logic.c:308:13:Drive_Task_Mode1	32	static
-../Core/Src/game_logic.c:371:6:Game_Router_Task	24	static
+../Core/Src/game_logic.c:296:6:SpecialAbility_ResetCooldown	8	static
+../Core/Src/game_logic.c:314:6:RGB_Update_From_State	8	static
+../Core/Src/game_logic.c:327:13:Drive_Task_Mode1	32	static
+../Core/Src/game_logic.c:390:6:Game_Router_Task	24	static

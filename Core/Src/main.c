@@ -2,7 +2,7 @@
 /**
   ******************************************************************************
   * @file           : main.c
-  * @brief          : Master UI Handheld Implementation
+  * @brief          : Handheld Mode Logic with Special Ability
   ******************************************************************************
   */
 /* USER CODE END Header */
@@ -27,18 +27,15 @@
 
 #define BTN_DEBOUNCE_MS     120U
 
+// --- Hardware Pin Definitions ---
 #define K1_PIN              GPIO_PIN_0
 #define K1_PORT             GPIOA
-
 #define CAP_TOUCH_PIN       GPIO_PIN_1
 #define CAP_TOUCH_PORT      GPIOA
-
 #define K2_PIN              GPIO_PIN_13
 #define K2_PORT             GPIOC
-
 #define JOY_SW_PIN          GPIO_PIN_2
 #define JOY_SW_PORT         GPIOC
-
 #define BTN1_PIN            GPIO_PIN_2
 #define BTN1_PORT           GPIOA
 #define BTN2_PIN            GPIO_PIN_3
@@ -50,16 +47,12 @@ I2C_HandleTypeDef  hi2c2;
 UART_HandleTypeDef huart3;
 SRAM_HandleTypeDef hsram1;
 
-// Button states
+// State trackers
 GPIO_PinState last_k1_state  = GPIO_PIN_RESET;
 GPIO_PinState last_k2_state  = GPIO_PIN_RESET;
-GPIO_PinState last_jsw_state = GPIO_PIN_SET;
-GPIO_PinState last_touch_state = GPIO_PIN_SET;
-
+GPIO_PinState last_cap_state = GPIO_PIN_SET;
 uint32_t last_k1_event_tick = 0U;
 uint32_t last_k2_event_tick = 0U;
-
-GPIO_PinState last_fire_input_state = GPIO_PIN_SET;
 
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
@@ -91,7 +84,6 @@ int main(void)
 
     LCD_INIT();
     
-    // Proactive drawing: ensure Home screen is visible immediately
     LCD_DrawHome();
     last_drawn_state = APP_HOME;
 
@@ -103,10 +95,22 @@ int main(void)
         uint32_t now = HAL_GetTick();
         uint32_t x_raw = read_adc1();
         uint32_t y_raw = read_adc2();
+        
         GPIO_PinState k1_now = HAL_GPIO_ReadPin(K1_PORT, K1_PIN);
         GPIO_PinState k2_now = HAL_GPIO_ReadPin(K2_PORT, K2_PIN);
+        GPIO_PinState cap_now = HAL_GPIO_ReadPin(CAP_TOUCH_PORT, CAP_TOUCH_PIN);
+        GPIO_PinState joy_sw_now = HAL_GPIO_ReadPin(JOY_SW_PORT, JOY_SW_PIN);
 
-        // -- Read Screen Touch --
+        // --- 1. FIRE INPUT (Joystick Button) ---
+        uint8_t fire_pressed = (joy_sw_now == GPIO_PIN_RESET) ? 1 : 0;
+        
+        // --- 2. SPECIAL ABILITY (Capacitive Touch) ---
+        if (cap_now == GPIO_PIN_RESET && last_cap_state == GPIO_PIN_SET) {
+            SpecialAbility_ResetCooldown();
+        }
+        last_cap_state = cap_now;
+        
+        // --- 3. RESISTIVE TOUCH SCREEN ---
         uint8_t ts_pressed = TouchPressed();
         uint8_t ts_click = 0;
         uint16_t px = 0, py = 0;
@@ -121,16 +125,14 @@ int main(void)
             uint16_t curr_py = map_u16(ty, TS_Y_MIN, TS_Y_MAX, 0, 319);
             curr_py = 319 - curr_py;
 
-            if ((last_ts_state_mem == 0) && ((now - last_ts_event_tick) >= 250U)) {
-                ts_click = 1;
-                px = curr_px;
-                py = curr_py;
+            if ((last_ts_state_mem == 0) && ((now - last_ts_event_tick) >= 200U)) {
+                ts_click = 1; px = curr_px; py = curr_py;
                 last_ts_event_tick = now;
             }
             last_ts_state_mem = 1;
-        }
-        else { last_ts_state_mem = 0; }
+        } else { last_ts_state_mem = 0; }
 
+        // Button Clicks
         uint8_t k1_click = 0U, k2_click = 0U;
         if ((k1_now == GPIO_PIN_SET) && (last_k1_state == GPIO_PIN_RESET) && ((now - last_k1_event_tick) >= BTN_DEBOUNCE_MS))
         { k1_click = 1U; last_k1_event_tick = now; }
@@ -140,11 +142,12 @@ int main(void)
         { k2_click = 1U; last_k2_event_tick = now; }
         last_k2_state = k2_now;
 
-        // --- Master UI Controller ---
+        // MASTER UI RENDERER
         if (app_state != last_drawn_state)
         {
             if (app_state == APP_HOME)          LCD_DrawHome();
             else if (app_state == APP_SETTINGS) LCD_DrawSettings();
+            else if (app_state == APP_WIFI_KEYBOARD) LCD_DrawKeyboard(keyboard_buffer);
             else if (app_state == APP_MODE_SELECT) LCD_DrawModeSelect();
             else if (app_state == APP_MODE_CONFIRM) LCD_DrawModeConfirm();
             else if (app_state == APP_CAR_SELECT)  LCD_DrawCarSelect();
@@ -157,26 +160,69 @@ int main(void)
             last_drawn_state = app_state;
         }
 
+        // LOGIC ENGINE
         if (app_state == APP_HOME) {
             if (ts_click) {
                 if (px >= 20 && px <= 220) {
-                    if (py >= 100 && py <= 160) { app_state = APP_MODE_SELECT; Buzzer_BeepLong(); }
+                    if (py >= 100 && py <= 160) { app_state = APP_MODE_SELECT; Buzzer_BeepShort(); }
                     else if (py >= 180 && py <= 240) { app_state = APP_SETTINGS; Buzzer_BeepShort(); }
                 }
             }
+            if (k1_click) app_state = APP_MODE_SELECT;
+            if (k2_click) app_state = APP_SETTINGS;
         }
         else if (app_state == APP_SETTINGS) {
             if (k1_click) app_state = APP_HOME;
+            if (k2_click) { 
+                LCD_Clear(15, 80, 210, 40, WHITE);
+                LCD_DrawRectangle(15, 80, 210, 40, BLUE);
+                LCD_TEXT(30, 92, "SCANNING...");
+                WifiScan(); 
+                LCD_DrawSettings(); 
+            }
+            if (ts_click) {
+                if (px >= 10 && px <= 230 && py >= 60 && py <= 220) {
+                    int8_t idx = (py - 65) / 22;
+                    if (idx >= 0 && idx < wifi_count) { selected_wifi_idx = idx; LCD_DrawWiFiList(); }
+                }
+                if (px >= 10 && px <= 230 && py >= 220 && py <= 270) {
+                    if (selected_wifi_idx != -1) { keyboard_buffer[0] = '\0'; app_state = APP_WIFI_KEYBOARD; }
+                    else { Buzzer_BeepShort(); }
+                }
+            }
+        }
+        else if (app_state == APP_WIFI_KEYBOARD) {
+            if (ts_click) {
+                if (px >= 10 && px <= 238 && py >= 90 && py <= 282) {
+                    int col = (px - 10) / 38; int row = (py - 90) / 32;
+                    if (col >= 0 && col < 6 && row >= 0 && row < 6) {
+                        const char* keys = kb_shift ? "ABCDEF GHIJKL MNOPQR STUVWX YZ0123 456789" : "abcdef ghijkl mnopqr stuvwx yz.,-_ !?@#$%";
+                        char c = keys[(row * 6) + col];
+                        if (c != ' ' && strlen(keyboard_buffer) < 31) {
+                            int len = strlen(keyboard_buffer); keyboard_buffer[len] = c; keyboard_buffer[len+1] = '\0';
+                            LCD_DrawKeyboard(keyboard_buffer);
+                        }
+                    }
+                }
+                if (py >= 282 && py <= 317) {
+                    if (px >= 10 && px <= 80) { kb_shift = !kb_shift; LCD_DrawKeyboard(keyboard_buffer); }
+                    else if (px >= 85 && px <= 155) { int len = strlen(keyboard_buffer); if (len > 0) { keyboard_buffer[len-1] = '\0'; LCD_DrawKeyboard(keyboard_buffer); } }
+                    else if (px >= 160 && px <= 230) { WifiJoin(wifi_ssids[selected_wifi_idx], keyboard_buffer); app_state = APP_SETTINGS; }
+                }
+            }
         }
         else if (app_state == APP_MODE_SELECT) {
             if (k1_click) selected_mode = (game_mode_t)(((uint8_t)selected_mode + 1U) % 3U);
             if (k2_click) app_state = APP_MODE_CONFIRM;
             if (ts_click) {
                 if (px >= 20 && px <= 220) {
-                    if (py >= 70 && py <= 110) selected_mode = GAME_MODE_1;
-                    else if (py >= 125 && py <= 165) selected_mode = GAME_MODE_2;
-                    else if (py >= 180 && py <= 220) selected_mode = GAME_MODE_3;
-                    app_state = APP_MODE_CONFIRM;
+                    game_mode_t new_mode = selected_mode;
+                    if (py >= 70 && py <= 110) new_mode = GAME_MODE_1;
+                    else if (py >= 125 && py <= 165) new_mode = GAME_MODE_2;
+                    else if (py >= 180 && py <= 220) new_mode = GAME_MODE_3;
+                    
+                    if (new_mode == selected_mode) app_state = APP_MODE_CONFIRM;
+                    else { selected_mode = new_mode; LCD_UpdateModeSelection(); }
                 }
             }
             if (selected_mode != last_drawn_mode) { LCD_UpdateModeSelection(); last_drawn_mode = selected_mode; }
@@ -187,25 +233,53 @@ int main(void)
                 if (selected_mode == GAME_MODE_2 || selected_mode == GAME_MODE_3) app_state = APP_GAME;
                 else app_state = APP_CAR_SELECT;
             }
+            if (ts_click) {
+                if (py >= 195 && py <= 230) {
+                    if (px >= 30 && px <= 110) app_state = APP_MODE_SELECT;
+                    else if (px >= 130 && px <= 210) {
+                        if (selected_mode == GAME_MODE_2 || selected_mode == GAME_MODE_3) app_state = APP_GAME;
+                        else app_state = APP_CAR_SELECT;
+                    }
+                }
+            }
         }
         else if (app_state == APP_CAR_SELECT) {
             if (k1_click) selected_car = (car_type_t)(((uint8_t)selected_car + 1U) % 7U);
             if (k2_click) app_state = APP_CAR_CONFIRM;
+            if (ts_click) {
+                if (px >= 14 && px <= 226) {
+                    int idx = (py - 64) / 24;
+                    if (idx >= 0 && idx <= 6) {
+                        car_type_t new_car = (car_type_t)idx;
+                        if (new_car == selected_car) app_state = APP_CAR_CONFIRM;
+                        else { selected_car = new_car; LCD_UpdateCarSelection(); }
+                    }
+                }
+            }
+            if (selected_car != last_drawn_car) { LCD_UpdateCarSelection(); last_drawn_car = selected_car; }
         }
         else if (app_state == APP_CAR_CONFIRM) {
             if (k1_click) app_state = APP_CAR_SELECT;
             if (k2_click) app_state = APP_GAME;
+            if (ts_click) {
+                if (py >= 195 && py <= 230) {
+                    if (px >= 30 && px <= 110) app_state = APP_CAR_SELECT;
+                    else if (px >= 130 && px <= 210) app_state = APP_GAME;
+                }
+            }
         }
         else if (app_state == APP_GAME) {
-            if (selected_mode == GAME_MODE_2) {
-                Mode2_Run(x_raw, y_raw, k1_click, k2_click, 0, ts_pressed, ts_click, px, py);
+            // Restore Original Laser/LED Loop Logic
+            laser_update();
+            RGB_Update_From_State();
+
+            if (selected_mode == GAME_MODE_1) {
+                Game_Router_Task(x_raw, y_raw, k1_click, k2_click, fire_pressed);
+                if (now - lcd_fast_tick >= LCD_FAST_UPDATE_MS) { LCD_UpdateGameFast(x_raw, y_raw); lcd_fast_tick = now; }
+                if (now - lcd_slow_tick >= LCD_SLOW_UPDATE_MS) { LCD_UpdateGameSlow(fire_pressed); lcd_slow_tick = now; }
             }
-            else if (selected_mode == GAME_MODE_3) {
-                Mode3_Run(x_raw, y_raw, k1_click, k2_click, 0, ts_pressed, ts_click, px, py);
-            }
-            else {
-                Game_Router_Task(x_raw, y_raw, k1_click, k2_click, 0);
-            }
+            else if (selected_mode == GAME_MODE_2) Mode2_Run(x_raw, y_raw, k1_click, k2_click, fire_pressed, ts_pressed, ts_click, px, py);
+            else if (selected_mode == GAME_MODE_3) Mode3_Run(x_raw, y_raw, k1_click, k2_click, fire_pressed, ts_pressed, ts_click, px, py);
         }
 
         Buzzer_Task();
@@ -216,8 +290,8 @@ int main(void)
 
 void SystemClock_Config(void)
 {
-    RCC_OscInitTypeDef o = {0};
-    RCC_ClkInitTypeDef c = {0};
+    RCC_OscInitTypeDef       o = {0};
+    RCC_ClkInitTypeDef       c = {0};
     RCC_PeriphCLKInitTypeDef p = {0};
     o.OscillatorType = RCC_OSCILLATORTYPE_HSE;
     o.HSEState = RCC_HSE_ON;
@@ -225,7 +299,7 @@ void SystemClock_Config(void)
     o.HSIState = RCC_HSI_ON;
     o.PLL.PLLState = RCC_PLL_ON;
     o.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-    o.PLL.PLLMUL = RCC_PLL_MUL9;
+    o.PLL.PLLMUL     = RCC_PLL_MUL9;
     if (HAL_RCC_OscConfig(&o) != HAL_OK) Error_Handler();
     c.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
     c.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
@@ -288,13 +362,13 @@ static void MX_I2C2_Init(void)
 
 static void MX_USART3_UART_Init(void)
 {
-    huart3.Instance = USART3;
-    huart3.Init.BaudRate = 115200;
-    huart3.Init.WordLength = UART_WORDLENGTH_8B;
-    huart3.Init.StopBits = UART_STOPBITS_1;
-    huart3.Init.Parity = UART_PARITY_NONE;
-    huart3.Init.Mode = UART_MODE_TX_RX;
-    huart3.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+    huart3.Instance          = USART3;
+    huart3.Init.BaudRate     = 115200;
+    huart3.Init.WordLength   = UART_WORDLENGTH_8B;
+    huart3.Init.StopBits     = UART_STOPBITS_1;
+    huart3.Init.Parity       = UART_PARITY_NONE;
+    huart3.Init.Mode         = UART_MODE_TX_RX;
+    huart3.Init.HwFlowCtl    = UART_HWCONTROL_NONE;
     huart3.Init.OverSampling = UART_OVERSAMPLING_16;
     if (HAL_UART_Init(&huart3) != HAL_OK) Error_Handler();
 }
@@ -308,8 +382,7 @@ static void MX_GPIO_Init(void)
     __HAL_RCC_GPIOD_CLK_ENABLE();
     __HAL_RCC_GPIOE_CLK_ENABLE();
     HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, GPIO_PIN_SET);
-    HAL_GPIO_WritePin(GPIOE, GPIO_PIN_1, GPIO_PIN_SET);
-    HAL_GPIO_WritePin(GPIOE, GPIO_PIN_7, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(GPIOE, GPIO_PIN_1 | GPIO_PIN_7, GPIO_PIN_SET);
     HAL_GPIO_WritePin(LASER_PORT, LASER_PIN, GPIO_PIN_RESET);
     HAL_GPIO_WritePin(RGB_R_PORT, RGB_R_PIN, GPIO_PIN_SET);
     HAL_GPIO_WritePin(RGB_G_PORT, RGB_G_PIN, GPIO_PIN_SET);
@@ -342,16 +415,14 @@ static void MX_GPIO_Init(void)
     g.Pin = GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7;
     g.Mode = GPIO_MODE_OUTPUT_PP; g.Pull = GPIO_NOPULL; g.Speed = GPIO_SPEED_FREQ_LOW;
     HAL_GPIO_Init(GPIOC, &g);
-    g.Pin = JOY_SW_PIN; g.Mode = GPIO_MODE_INPUT; g.Pull = GPIO_PULLUP;
+    g.Pin  = JOY_SW_PIN; g.Mode = GPIO_MODE_INPUT; g.Pull = GPIO_PULLUP;
     HAL_GPIO_Init(JOY_SW_PORT, &g);
-    g.Pin = BTN1_PIN | BTN2_PIN; g.Mode = GPIO_MODE_INPUT; g.Pull = GPIO_PULLUP;
+    g.Pin  = BTN1_PIN | BTN2_PIN; g.Mode = GPIO_MODE_INPUT; g.Pull = GPIO_PULLUP;
     HAL_GPIO_Init(BTN1_PORT, &g);
-    g.Pin = K1_PIN; g.Mode = GPIO_MODE_INPUT; g.Pull = GPIO_NOPULL;
+    g.Pin  = K1_PIN; g.Mode = GPIO_MODE_INPUT; g.Pull = GPIO_NOPULL;
     HAL_GPIO_Init(K1_PORT, &g);
-    g.Pin = K2_PIN; g.Mode = GPIO_MODE_INPUT; g.Pull = GPIO_NOPULL;
+    g.Pin  = K2_PIN; g.Mode = GPIO_MODE_INPUT; g.Pull = GPIO_NOPULL;
     HAL_GPIO_Init(K2_PORT, &g);
-    g.Pin = DS18B20_PIN; g.Mode = GPIO_MODE_INPUT; g.Pull = GPIO_NOPULL;
-    HAL_GPIO_Init(DS18B20_PORT, &g);
 }
 
 static void MX_FSMC_Init(void)
@@ -372,12 +443,8 @@ static void MX_FSMC_Init(void)
     hsram1.Init.ExtendedMode = FSMC_EXTENDED_MODE_DISABLE;
     hsram1.Init.AsynchronousWait = FSMC_ASYNCHRONOUS_WAIT_DISABLE;
     hsram1.Init.WriteBurst = FSMC_WRITE_BURST_DISABLE;
-    t.AddressSetupTime = 15;
-    t.AddressHoldTime = 15;
-    t.DataSetupTime = 255;
-    t.BusTurnAroundDuration = 15;
-    t.CLKDivision = 16;
-    t.DataLatency = 17;
+    t.AddressSetupTime = 15; t.AddressHoldTime = 15; t.DataSetupTime = 255;
+    t.BusTurnAroundDuration = 15; t.CLKDivision = 16; t.DataLatency = 17;
     t.AccessMode = FSMC_ACCESS_MODE_A;
     if (HAL_SRAM_Init(&hsram1, &t, NULL) != HAL_OK) Error_Handler();
     __HAL_AFIO_FSMCNADV_DISCONNECTED();

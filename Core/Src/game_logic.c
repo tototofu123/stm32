@@ -259,6 +259,7 @@ void laser_update(void)
                 strcpy(laser_line, "COOLDOWN");
                 SEG_StartCooldownCountdown(cooldown_ms);
 
+                // Recharge Special Ability every time we finish a firing cycle
                 if (touch_ability_shots_needed > 0)
                     touch_ability_shots_needed--;
             } else {
@@ -289,6 +290,24 @@ void laser_update(void)
         laser_state = LASER_PRIMING;
         laser_tick = now;
         strcpy(laser_line, "AUTO CHARGE");
+    }
+}
+
+void SpecialAbility_ResetCooldown(void)
+{
+    if (touch_ability_shots_needed == 0) {
+        // Can be used during COOLDOWN, PRIMING, or FIRING to reset
+        if (laser_state == LASER_COOLDOWN || laser_state == LASER_PRIMING || laser_state == LASER_FIRING) {
+            HAL_GPIO_WritePin(LASER_PORT, LASER_PIN, GPIO_PIN_RESET);
+            Fire_SendCmd(0);
+            laser_state = LASER_IDLE;
+            strcpy(laser_line, "READY");
+            fire_cmd_priority = 0U;
+            
+            // Set cooldown for 10 rounds
+            touch_ability_shots_needed = 10;
+            Buzzer_BeepLong(); // Sound feedback for ability use
+        }
     }
 }
 

@@ -29,6 +29,16 @@ extern uint32_t    lcd_fast_tick;
 extern uint32_t    lcd_slow_tick;
 extern uint8_t     touch_display_flag;
 
+// WiFi List Structure
+#define MAX_WIFI_NETWORKS 10
+extern char wifi_ssids[MAX_WIFI_NETWORKS][33];
+extern uint8_t wifi_count;
+extern int8_t selected_wifi_idx;
+
+// Keyboard State
+extern char keyboard_buffer[33];
+extern uint8_t kb_shift;
+
 // Function Prototypes
 void LCD_ClearTextField(uint16_t x, uint16_t y, uint16_t chars, uint16_t bg);
 
@@ -39,16 +49,6 @@ void LCD_DrawSettings(void);
 void LCD_DrawWiFiList(void);
 void LCD_DrawKeyboard(const char* current_input);
 void LCD_DrawMode3Placeholder(void);
-
-// WiFi List Structure
-#define MAX_WIFI_NETWORKS 10
-extern char wifi_ssids[MAX_WIFI_NETWORKS][33];
-extern uint8_t wifi_count;
-extern int8_t selected_wifi_idx;
-
-// Keyboard State
-extern char keyboard_buffer[33];
-extern uint8_t kb_shift;
 
 // Existing Screens
 void LCD_DrawModeSelect(void);

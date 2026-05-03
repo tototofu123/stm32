@@ -3,6 +3,7 @@
 #include "peripherals.h"
 #include "mode_2.h"
 #include "mode_3.h"
+#include "alerts.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -32,7 +33,7 @@ void LCD_DrawStatusBar(void)
     LCD_Clear(0, 0, 240, 20, UI_HEAD);
     LCD_SetColors(BLUE, UI_HEAD);
     
-    char ip_line[24];
+    char ip_line[40];
     if (strlen(wifi_line2) > 5) {
         snprintf(ip_line, sizeof(ip_line), "IP:%s", wifi_line2);
     } else {
@@ -120,13 +121,13 @@ void LCD_DrawKeyboard(const char* current_input)
     LCD_SetColors(BLACK, WHITE);
     LCD_TEXT(15, 52, current_input);
     
-    // Keyboard Grid (Grid 6x6 for A-Z, 0-9, etc.)
+    // Keyboard Grid
     const char* keys = kb_shift ? "ABCDEF GHIJKL MNOPQR STUVWX YZ0123 456789" : "abcdef ghijkl mnopqr stuvwx yz.,-_ !?@#$%";
     
-    for (int r = 0; i < 6; i++) {
+    for (int r = 0; r < 6; r++) {
         for (int c = 0; c < 6; c++) {
             int idx = (r * 6) + c;
-            if (idx >= strlen(keys)) break;
+            if (idx >= (int)strlen(keys)) break;
             
             uint16_t x = 10 + (c * 38);
             uint16_t y = 90 + (r * 32);
@@ -138,7 +139,7 @@ void LCD_DrawKeyboard(const char* current_input)
         }
     }
     
-    // Special Keys (Shift, Backspace, Enter)
+    // Special Keys
     LCD_Clear(10, 282, 70, 35, kb_shift ? UI_BOX_SEL : UI_BOX_NSEL);
     LCD_TEXT(20, 292, "SHIFT");
     
@@ -326,34 +327,12 @@ void LCD_DrawMode2InputSelect(void) {
     if (selected_input == M2_INPUT_JOYSTICK) {
         LCD_Clear(10, 70, 220, 80, BLUE);
         LCD_Clear(12, 72, 216, 76, WHITE);
-        LCD_TEXT(40, 102, ">> [JOYSTICK] <<");
-    } else {
-        LCD_Clear(30, 80, 180, 60, GREY);
-        LCD_TEXT(55, 102, "[JOYSTICK]");
-    }
-    
-    if (selected_input == M2_INPUT_TOUCH) {
-        LCD_Clear(10, 170, 220, 80, MAGENTA);
-        LCD_Clear(12, 172, 216, 76, WHITE);
-        LCD_TEXT(25, 202, ">> [TOUCH SCREEN] <<");
-    } else {
-        LCD_Clear(30, 180, 180, 60, GREY);
-        LCD_TEXT(45, 202, "[TOUCH SCREEN]");
-    }
-    
-    LCD_Clear(0, 280, 240, 40, UI_BOTTOM);
-    LCD_TEXT(20, 292, "K1:Switch  K2:Confirm");
-}
-
-void LCD_UpdateMode2InputSelect(void) {
-    if (selected_input == M2_INPUT_JOYSTICK) {
-        LCD_Clear(10, 70, 220, 80, BLUE);
-        LCD_Clear(12, 72, 216, 76, WHITE);
         LCD_SetColors(BLUE, WHITE);
         LCD_TEXT(40, 102, ">> [JOYSTICK] <<");
     } else {
-        LCD_Clear(30, 80, 180, 60, GREY);
-        LCD_SetColors(BLUE, GREY);
+        LCD_Clear(10, 70, 220, 80, GREY);
+        LCD_Clear(12, 72, 216, 76, WHITE);
+        LCD_SetColors(BLACK, WHITE);
         LCD_TEXT(55, 102, "[JOYSTICK]");
     }
     
@@ -363,9 +342,33 @@ void LCD_UpdateMode2InputSelect(void) {
         LCD_SetColors(MAGENTA, WHITE);
         LCD_TEXT(25, 202, ">> [TOUCH SCREEN] <<");
     } else {
-        LCD_Clear(30, 180, 180, 60, GREY);
-        LCD_SetColors(BLUE, GREY);
+        LCD_Clear(10, 170, 220, 80, GREY);
+        LCD_Clear(12, 172, 216, 76, WHITE);
+        LCD_SetColors(BLACK, WHITE);
         LCD_TEXT(45, 202, "[TOUCH SCREEN]");
+    }
+    
+    LCD_Clear(0, 280, 240, 40, UI_BOTTOM);
+    LCD_TEXT(20, 292, "K1:Switch  K2:Confirm");
+    LCD_SetColors(BLUE, WHITE);
+}
+
+void LCD_UpdateMode2InputSelect(void) {
+    // Redraw with standard clear blocks to ensure NO artifacts
+    LCD_Clear(10, 70, 220, 80, (selected_input == M2_INPUT_JOYSTICK) ? BLUE : GREY);
+    LCD_Clear(12, 72, 216, 76, WHITE);
+    if (selected_input == M2_INPUT_JOYSTICK) {
+        LCD_SetColors(BLUE, WHITE); LCD_TEXT(40, 102, ">> [JOYSTICK] <<");
+    } else {
+        LCD_SetColors(BLACK, WHITE); LCD_TEXT(55, 102, "[JOYSTICK]");
+    }
+
+    LCD_Clear(10, 170, 220, 80, (selected_input == M2_INPUT_TOUCH) ? MAGENTA : GREY);
+    LCD_Clear(12, 172, 216, 76, WHITE);
+    if (selected_input == M2_INPUT_TOUCH) {
+        LCD_SetColors(MAGENTA, WHITE); LCD_TEXT(25, 202, ">> [TOUCH SCREEN] <<");
+    } else {
+        LCD_SetColors(BLACK, WHITE); LCD_TEXT(45, 202, "[TOUCH SCREEN]");
     }
     LCD_SetColors(BLUE, WHITE);
 }

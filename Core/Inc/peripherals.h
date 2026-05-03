@@ -2,6 +2,7 @@
 #define PERIPHERALS_H
 
 #include "main.h"
+#include "alerts.h" // Get shared RGB definitions
 #include <stdint.h>
 
 // WiFi (ESP8266)
@@ -20,15 +21,7 @@ uint32_t read_adc2(void);
 uint16_t map_u16(uint32_t x, uint32_t in_min, uint32_t in_max, uint32_t out_min, uint32_t out_max);
 int32_t DS18B20_ReadRaw(void);
 
-// RGB LED
-#define RGB_R_PIN           GPIO_PIN_10
-#define RGB_R_PORT          GPIOB
-#define RGB_G_PIN           GPIO_PIN_1
-#define RGB_G_PORT          GPIOE
-#define RGB_B_PIN           GPIO_PIN_11
-#define RGB_B_PORT          GPIOB
 #define DS18B20_PIN         GPIO_PIN_11
 #define DS18B20_PORT        GPIOC
-void RGB_Set(uint8_t r, uint8_t g, uint8_t b);
 
 #endif // PERIPHERALS_H
