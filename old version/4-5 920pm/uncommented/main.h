@@ -1,30 +1,4 @@
 /* USER CODE BEGIN Header */
-/*
- * =============================================================================
- * MAIN.H - PUBLIC INTERFACE FOR MAIN.C
- * =============================================================================
- * This header exposes the HAL baseline and Error_Handler entry point.
- * 
- * Responsibility:
- * - Includes stm32f1xx_hal.h to provide MCU types, GPIO, ADC, UART, I2C, etc.
- * - Declares Error_Handler() as the global fatal-error exit point.
- * - Acts as include guard to prevent multiple-inclusion compilation errors.
- *
- * Relationship to main.c:
- * - main.c is the runtime control center: boot, hardware setup, main loop.
- * - This header exposes only the Error_Handler symbol that other modules
- *   can call; implementation details stay in main.c.
- *
- * Data flow:
- * - Other module headers (game_logic.h, ui.h, mode_2.h, mode_3.h, etc.)
- *   include main.h to get HAL types and constants.
- * - All gameplay and UI state is owned by their respective modules.
- *
- * Variables exported: None.
- * Enums/types exported: None (all from HAL).
- * No C++ classes used.
- * =============================================================================
- */
 /**
   ******************************************************************************
   * @file           : main.h
@@ -76,11 +50,6 @@ extern "C" {
 /* USER CODE END EM */
 
 /* Exported functions prototypes ---------------------------------------------*/
-/*
- * Error_Handler:
- * Global fatal-error exit point. Called when a critical failure occurs during
- * initialization or runtime. Halts firmware execution cleanly.
- */
 void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */

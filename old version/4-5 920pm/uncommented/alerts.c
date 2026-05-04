@@ -1,20 +1,3 @@
-/*
- * alerts.c manages the buzzer and RGB LED feedback system. It provides short
- * and long beep support, mute control, and a periodic task that turns sounds
- * off after their programmed duration.
- *
- * Functions in this file:
- * - RGB_Set: writes the RGB LED state using the board's active-low wiring.
- * - Buzzer_Set: turns the buzzer on or off.
- * - Buzzer_SetMute: enables or disables buzzer output globally.
- * - Buzzer_BeepShort: starts a short feedback beep.
- * - Buzzer_BeepLong: starts a longer feedback beep.
- * - Buzzer_Task: shuts off the buzzer after its timeout expires.
- *
- * Global variables used here include buzzer_active, buzzer_muted,
- * buzzer_tick, buzzer_duration, and the shared led_enabled flag from ui.c.
- * No classes are used in this C file.
- */
 #include "alerts.h"
 #include "ui.h"
 
@@ -24,9 +7,6 @@ uint8_t  buzzer_muted    = 0U;
 uint32_t buzzer_tick     = 0U;
 uint32_t buzzer_duration = 0U;
 
-/* RGB_Set applies the requested RGB state using the active-low board wiring
- * and respects the global LED enable flag.
- */
 void RGB_Set(uint8_t r, uint8_t g, uint8_t b)
 {
     if (!led_enabled) { r = 0; g = 0; b = 0; } // Force off if LED display is disabled
@@ -36,25 +16,18 @@ void RGB_Set(uint8_t r, uint8_t g, uint8_t b)
     HAL_GPIO_WritePin(RGB_B_PORT, RGB_B_PIN, b ? GPIO_PIN_RESET : GPIO_PIN_SET);
 }
 
-/* Buzzer_Set directly drives the buzzer output pin unless mute is active.
- */
 void Buzzer_Set(uint8_t on)
 {
     if (buzzer_muted && on) return;
     HAL_GPIO_WritePin(BEEP_PORT, BEEP_PIN, on ? GPIO_PIN_SET : GPIO_PIN_RESET);
 }
 
-/* Buzzer_SetMute stores the mute state and turns the buzzer off immediately
- * when muting is enabled.
- */
 void Buzzer_SetMute(uint8_t mute)
 {
     buzzer_muted = mute;
     if (mute) Buzzer_Set(0);
 }
 
-/* Buzzer_BeepShort arms a short timed beep for quick feedback events.
- */
 void Buzzer_BeepShort(void)
 {
     if (buzzer_muted) return;
@@ -64,8 +37,6 @@ void Buzzer_BeepShort(void)
     Buzzer_Set(1);
 }
 
-/* Buzzer_BeepLong arms a longer beep for stronger feedback events.
- */
 void Buzzer_BeepLong(void)
 {
     if (buzzer_muted) return;
@@ -75,9 +46,6 @@ void Buzzer_BeepLong(void)
     Buzzer_Set(1);
 }
 
-/* Buzzer_Task keeps the buzzer on for the requested duration and then turns it
- * back off once the timer expires.
- */
 void Buzzer_Task(void)
 {
     uint32_t now = HAL_GetTick();

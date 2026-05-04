@@ -5,27 +5,6 @@
   * @brief          : Handheld Mode Logic with Special Ability
   ******************************************************************************
   */
-/*
- * main.c is the firmware entry point. It initializes HAL and all peripherals,
- * calibrates the joystick, handles every input source, routes the application
- * state machine, and keeps the UI, audio, 7-segment display, and game modes
- * synchronized during runtime.
- *
- * Functions in this file:
- * - SystemClock_Config: sets the MCU clock tree and prescalers.
- * - MX_GPIO_Init: configures GPIO pins used by buttons, LEDs, and control lines.
- * - MX_FSMC_Init: configures the LCD external memory interface.
- * - MX_ADC1_Init: configures the first joystick ADC channel.
- * - MX_ADC2_Init: configures the second joystick ADC channel.
- * - MX_I2C2_Init: configures the I2C bus used by external hardware.
- * - MX_USART3_UART_Init: configures the UART used by the ESP/WiFi module.
- * - main: performs startup initialization and runs the main polling loop.
- * - Error_Handler: halts the system if a fatal error occurs.
- *
- * Global variables used here include the HAL handles, debounce trackers,
- * joystick threshold values, and the shared application state imported from
- * the gameplay and UI modules. No classes are used in this C file.
- */
 /* USER CODE END Header */
 
 #include "main.h"
@@ -94,10 +73,6 @@ static void MX_USART3_UART_Init(void);
 
 int main(void)
 {
-    /* main performs all board startup work and then runs the forever loop that
-     * polls inputs, updates the current app state, and dispatches gameplay logic.
-     */
-
     HAL_Init();
     SystemClock_Config();
     MX_GPIO_Init();
@@ -111,22 +86,14 @@ int main(void)
     HAL_ADCEx_Calibration_Start(&hadc2);
     
     // Joystick auto-calibration (increased deadzone to 1000 for stability)
-    // We read current joystick center values once at startup to adapt to
-    // hardware variation between boards and analog stick tolerances.
     uint32_t cx = read_adc1();
     uint32_t cy = read_adc2();
-    // Safety range check:
-    // Only accept values that look physically valid for a centered joystick.
-    // If the reading is too close to ADC rails, we treat it as noisy/bad boot
-    // input and keep default thresholds.
     if(cx > 800 && cx < 3600) {
-        // Store center and create left/right trigger thresholds around center.
         adc_center_x = cx;
         x_left_thresh = cx - 1000;
         x_right_thresh = cx + 1000;
     }
     if(cy > 800 && cy < 3600) {
-        // Same logic for forward/backward axis threshold calculation.
         adc_center_y = cy;
         y_fwd_thresh = cy - 1000;
         y_back_thresh = cy + 1000;
@@ -148,21 +115,11 @@ int main(void)
 
     while (1)
     {
-        // ===== FRAME START =====
-        // Every pass through this loop is one firmware "frame".
-        // 1) Read all inputs
-        // 2) Convert raw signals into events (clicks/pulses)
-        // 3) Run state-machine logic for current screen/mode
-        // 4) Draw/update outputs (LCD, buzzer, 7-seg, LEDs)
-        // 5) Delay a little to keep timing stable
         uint32_t now = HAL_GetTick();
         uint32_t x_raw = read_adc1();
         uint32_t y_raw = read_adc2();
         
         // Joystick direction pulses
-        // We convert continuous analog direction into single-step events.
-        // Example: if the user keeps holding UP, we only emit one joy_up pulse
-        // until they release and press UP again. This prevents menu overscroll.
         static uint8_t last_j_up = 0, last_j_down = 0, last_j_left = 0, last_j_right = 0;
         uint8_t joy_up = 0, joy_down = 0, joy_left = 0, joy_right = 0;
         if (y_raw < Y_FWD_THRESH_ADC) { if(!last_j_up) joy_up = 1; last_j_up = 1; } else last_j_up = 0;
@@ -175,24 +132,18 @@ int main(void)
         GPIO_PinState cap_now = HAL_GPIO_ReadPin(CAP_TOUCH_PORT, CAP_TOUCH_PIN);
         GPIO_PinState joy_sw_now = HAL_GPIO_ReadPin(JOY_SW_PORT, JOY_SW_PIN);
 
-        // JOY_SW is wired active-low: RESET means physically pressed.
         uint8_t fire_pressed = (joy_sw_now == GPIO_PIN_RESET) ? 1 : 0;
         
-        // Capacitive key edge detect (pressed now, not pressed in previous frame).
-        // This avoids repeating the same action every frame while held.
         if (cap_now == GPIO_PIN_RESET && last_cap_state == GPIO_PIN_SET) {
             if (app_state == APP_MODE_SELECT) {
-                // Quick-start behavior: start game immediately from mode select.
                 selected_mode = (mode_focus_idx >= 0) ? (game_mode_t)mode_focus_idx : GAME_MODE_1;
                 selected_car = CAR_V0;
                 app_state = APP_GAME;
                 Buzzer_BeepShort();
             } else {
-                // In gameplay/non-mode-select context, cap key acts as ability reset.
                 SpecialAbility_ResetCooldown();
             }
         }
-        // Save current sampled state for next frame edge detection.
         last_cap_state = cap_now;
         
         uint8_t ts_pressed = TouchPressed();
@@ -203,45 +154,30 @@ int main(void)
 
         if (ts_pressed)
         {
-            // Read raw touch ADC-like values.
             uint16_t tx = TouchReadXRaw();
             uint16_t ty = TouchReadYRaw();
-            // Map raw touch range to LCD pixel coordinates.
             uint16_t curr_px = map_u16(tx, TS_X_MIN, TS_X_MAX, 0, 239);
             uint16_t curr_py = map_u16(ty, TS_Y_MIN, TS_Y_MAX, 0, 319);
-            // Panel coordinate system is vertically mirrored relative to screen.
             curr_py = 319 - curr_py;
 
-            // Touch click event generation with 200 ms debounce.
-            // We only emit one click when finger first touches the panel.
             if ((last_ts_state_mem == 0) && ((now - last_ts_event_tick) >= 200U)) {
                 ts_click = 1; px = curr_px; py = curr_py;
                 last_ts_event_tick = now;
             }
-            // Mark touch as currently active.
             last_ts_state_mem = 1;
-        } else {
-            // Finger released: allow next press to become a new click event.
-            last_ts_state_mem = 0;
-        }
+        } else { last_ts_state_mem = 0; }
 
         uint8_t k1_click = 0U, k2_click = 0U;
-        // Rising-edge + debounce for K1.
-        // Condition means: button just transitioned to pressed state AND enough
-        // time passed since the last accepted event.
         if ((k1_now == GPIO_PIN_SET) && (last_k1_state == GPIO_PIN_RESET) && ((now - last_k1_event_tick) >= BTN_DEBOUNCE_MS))
         { k1_click = 1U; last_k1_event_tick = now; }
         last_k1_state = k1_now;
 
-        // Same debounce policy for K2.
         if ((k2_now == GPIO_PIN_SET) && (last_k2_state == GPIO_PIN_RESET) && ((now - last_k2_event_tick) >= BTN_DEBOUNCE_MS))
         { k2_click = 1U; last_k2_event_tick = now; }
         last_k2_state = k2_now;
 
         if (app_state != last_drawn_state)
         {
-            // Full-screen draw only when entering a new app state.
-            // This reduces flicker and avoids expensive full redraws each frame.
             if (app_state == APP_HOME)          LCD_DrawHome();
             else if (app_state == APP_SETTINGS) LCD_DrawSettings();
             else if (app_state == APP_WIFI_KEYBOARD) LCD_DrawKeyboard(keyboard_buffer);
@@ -258,8 +194,6 @@ int main(void)
         }
 
         // --- Hardware Quick Start (Cap Touch) ---
-        // Global quick-start path from menu contexts.
-        // Note: this block requires a press edge, same as other edge detectors.
         if (cap_now == GPIO_PIN_RESET && last_cap_state == GPIO_PIN_SET) {
             if (app_state == APP_MODE_SELECT || app_state == APP_CAR_SELECT || app_state == APP_HOME) {
                 selected_mode = GAME_MODE_1;
@@ -285,7 +219,6 @@ int main(void)
         }
 
         // --- Navigation Logic (Touch & HW) ---
-        // State machine branch: each block below handles one active screen.
         if (app_state == APP_HOME) {
             if (k1_click) {
                 app_state = APP_MODE_SELECT;
@@ -321,8 +254,6 @@ int main(void)
             }
         }
         else if (app_state == APP_SETTINGS) {
-            // Navigation in settings list:
-            // focus index 0..5 = options, -1 = back button.
             if (joy_down || k1_click) {
                 if (settings_focus_idx < 5) settings_focus_idx++;
                 else settings_focus_idx = -1;
@@ -330,14 +261,12 @@ int main(void)
                 Buzzer_BeepShort();
             }
             if (joy_up) {
-                // Wrap-around navigation when going backward past the beginning.
                 if (settings_focus_idx == -1) settings_focus_idx = 5;
                 else if (settings_focus_idx > 0) settings_focus_idx--;
                 else settings_focus_idx = -1;
                 LCD_DrawSettings();
                 Buzzer_BeepShort();
             }
-            // Confirm action (change setting or exit) with debounce.
             if ((fire_pressed || k2_click) && ((now - last_k2_event_tick) >= 300)) {
                 last_k2_event_tick = now;
                 if (settings_focus_idx == -1) {
@@ -356,8 +285,6 @@ int main(void)
             }
 
             if (ts_click) {
-                // Touch detection: map pixel Y-coordinate to settings row.
-                // Each row is 33 pixels tall (41, 74, 107, 140, 173, 206, 239).
                 uint8_t hit = 0;
                 int8_t new_idx = settings_focus_idx;
                 if (py >= 41 && py <= 74) { new_idx = 0; hit = 1; }
@@ -368,9 +295,7 @@ int main(void)
                 else if (py >= 206 && py <= 239) { new_idx = 5; hit = 1; }
 
                 if (hit) {
-                    // Touch landed on a settings row.
                     if (new_idx == settings_focus_idx) {
-                        // Double-tap same row: toggle/cycle the setting.
                         if (new_idx == 0) temp_theme = (ui_theme_t)((temp_theme + 1) % 3);
                         else if (new_idx == 1) { temp_audio = !temp_audio; Buzzer_SetMute(!temp_audio); }
                         else if (new_idx == 2) temp_cb = !temp_cb;
@@ -379,7 +304,6 @@ int main(void)
                         else if (new_idx == 5) temp_font = (ui_font_t)((temp_font + 1) % 2);
                         LCD_UpdateSettingsOption((uint8_t)new_idx);
                     } else {
-                        // Single-tap different row: just move focus, do not change value.
                         int8_t old = settings_focus_idx;
                         settings_focus_idx = new_idx;
                         LCD_UpdateSettingsOption((uint8_t)old);
@@ -388,25 +312,19 @@ int main(void)
                     Buzzer_BeepShort();
                 }
                 else if (py >= 280) {
-                    // Touch in bottom confirmation area (OK/CANCEL buttons).
                     if (px >= 120) {
-                        // OK button: commit all temp settings to live config.
                         current_theme = temp_theme; audio_enabled = temp_audio; colorblind_mode = temp_cb;
                         led_enabled = temp_led; seg_enabled = temp_seg; current_font = temp_font;
-                        // Apply LED and 7-seg changes immediately.
                         if (!led_enabled) RGB_Set(0, 0, 0); else RGB_Update_From_State();
                         if (!seg_enabled) SEG_AllOff();
                         app_state = APP_HOME; Buzzer_BeepShort();
                     } else if (px <= 110) {
-                        // CANCEL button: discard temp settings and return to home.
                         app_state = APP_HOME; Buzzer_SetMute(!audio_enabled); Buzzer_BeepShort();
                     }
                 }
             }
         }
         else if (app_state == APP_MODE_SELECT) {
-            // Mode selection screen navigation.
-            // Three modes: 0=MODE1, 1=MODE2, 2=MODE3, or -1=back.
             if (joy_down || k1_click) {
                 if (mode_focus_idx < 2) mode_focus_idx++;
                 else mode_focus_idx = -1;
@@ -420,13 +338,10 @@ int main(void)
                 LCD_UpdateModeSelection();
                 Buzzer_BeepShort();
             }
-            // Confirm mode selection with 300ms debounce (prevent double-presses).
             if ((fire_pressed || k2_click) && ((now - last_k2_event_tick) >= 300)) {
                 if (mode_focus_idx == -1) {
-                    // Back button pressed: return to home.
                     app_state = APP_HOME;
                 } else {
-                    // Mode selected: store selection and show confirmation popup.
                     selected_mode = (game_mode_t)mode_focus_idx;
                     app_state = APP_MODE_CONFIRM;
                 }
@@ -434,22 +349,18 @@ int main(void)
                 Buzzer_BeepShort();
             }
             
-            // Touch input for mode selection.
             if (ts_click) {
                 if (px >= 20 && px <= 220) {
-                    // Map Y-coordinate to mode row (3 modes on screen).
                     int8_t new_idx = -1;
-                    if (py >= 70 && py <= 110) new_idx = 0;  // MODE 1 row
-                    else if (py >= 125 && py <= 165) new_idx = 1;  // MODE 2 row
-                    else if (py >= 180 && py <= 220) new_idx = 2;  // MODE 3 row
+                    if (py >= 70 && py <= 110) new_idx = 0;
+                    else if (py >= 125 && py <= 165) new_idx = 1;
+                    else if (py >= 180 && py <= 220) new_idx = 2;
                     
                     if (new_idx != -1) {
                         if (new_idx == mode_focus_idx) {
-                            // Double-tap same mode: confirm selection.
                             selected_mode = (game_mode_t)new_idx;
                             app_state = APP_MODE_CONFIRM;
                         } else {
-                            // Single-tap different mode: just move focus.
                             mode_focus_idx = (int8_t)new_idx;
                             LCD_UpdateModeSelection();
                         }
@@ -459,22 +370,12 @@ int main(void)
             }
         }
         else if (app_state == APP_MODE_CONFIRM) {
-            // Confirmation popup for mode choice.
-            if (k1_click) {
-                // Cancel: go back to mode selection.
-                app_state = APP_MODE_SELECT;
-                Buzzer_BeepShort();
-            }
-            // Confirm with 300ms debounce.
+            if (k1_click) { app_state = APP_MODE_SELECT; Buzzer_BeepShort(); }
             if ((fire_pressed || k2_click) && ((now - last_k2_event_tick) >= 300)) {
                 last_k2_event_tick = now;
-                // Mode 2 and 3 skip car selection and go straight to game.
-                // Mode 1 requires car selection before starting.
-                if (selected_mode == GAME_MODE_2 || selected_mode == GAME_MODE_3) {
-                    app_state = APP_GAME;
-                } else {
-                    app_state = APP_CAR_SELECT;
-                }
+                // Skip car select for Mode 2 and Mode 3; just change state and let main loop init
+                if (selected_mode == GAME_MODE_2 || selected_mode == GAME_MODE_3) { app_state = APP_GAME; }
+                else { app_state = APP_CAR_SELECT; }
                 Buzzer_BeepShort();
             }
             if (ts_click) {
@@ -489,29 +390,23 @@ int main(void)
             }
         }
         else if (app_state == APP_CAR_SELECT) {
-            // Car selection screen: 7 cars (V0-V6) or back button (-1).
             if (joy_down || k1_click) {
-                // Navigate down through car list.
                 if (car_focus_idx < 6) car_focus_idx++;
-                else car_focus_idx = -1;  // Wrap to back button.
+                else car_focus_idx = -1;
                 LCD_UpdateCarSelection();
                 Buzzer_BeepShort();
             }
             if (joy_up) {
-                // Navigate up with wrap-around.
                 if (car_focus_idx == -1) car_focus_idx = 6;
                 else if (car_focus_idx > 0) car_focus_idx--;
                 else car_focus_idx = -1;
                 LCD_UpdateCarSelection();
                 Buzzer_BeepShort();
             }
-            // Confirm car selection with 300ms debounce.
             if ((fire_pressed || k2_click) && ((now - last_k2_event_tick) >= 300)) {
                 if (car_focus_idx == -1) {
-                    // Back: return to mode selection.
                     app_state = APP_MODE_SELECT;
                 } else {
-                    // Car chosen: store and show confirmation popup.
                     selected_car = (car_type_t)car_focus_idx;
                     app_state = APP_CAR_CONFIRM;
                 }
@@ -519,18 +414,14 @@ int main(void)
                 Buzzer_BeepShort();
             }
 
-            // Touch input for car selection.
             if (ts_click) {
                 if (px >= 14 && px <= 226) {
-                    // Each car row is 26 pixels tall; calculate which row was touched.
                     int8_t new_idx = (py - 64) / 26;
                     if (new_idx >= 0 && new_idx <= 6) {
                         if (new_idx == car_focus_idx) {
-                            // Double-tap same car: confirm selection.
                             selected_car = (car_type_t)new_idx;
                             app_state = APP_CAR_CONFIRM;
                         } else {
-                            // Single-tap different car: move focus only.
                             car_focus_idx = new_idx;
                             LCD_UpdateCarSelection();
                         }
@@ -540,16 +431,9 @@ int main(void)
             }
         }
         else if (app_state == APP_CAR_CONFIRM) {
-            // Car confirmation popup.
-            if (k1_click) {
-                // Cancel: return to car selection.
-                app_state = APP_CAR_SELECT;
-                Buzzer_BeepShort();
-            }
-            // Confirm with 300ms debounce.
+            if (k1_click) { app_state = APP_CAR_SELECT; Buzzer_BeepShort(); }
             if ((fire_pressed || k2_click) && ((now - last_k2_event_tick) >= 300)) {
                 last_k2_event_tick = now;
-                // Proceed to gameplay.
                 app_state = APP_GAME;
                 Buzzer_BeepShort();
             }
@@ -561,99 +445,66 @@ int main(void)
             }
         }
         else if (app_state == APP_GAME) {
-            // Active gameplay loop.
             laser_update();
             RGB_Update_From_State();
 
             if (selected_mode == GAME_MODE_1) {
-                // Mode 1: single-player tank dueling.
                 Game_Router_Task(x_raw, y_raw, k1_click, k2_click, fire_pressed);
-                // Frequent LCD updates for responsive movement display.
-                if (now - lcd_fast_tick >= LCD_FAST_UPDATE_MS) {
-                    LCD_UpdateGameFast(x_raw, y_raw);
-                    lcd_fast_tick = now;
-                }
-                // Slower updates for HUD elements (status, stats).
-                if (now - lcd_slow_tick >= LCD_SLOW_UPDATE_MS) {
-                    LCD_UpdateGameSlow(fire_pressed);
-                    lcd_slow_tick = now;
-                }
+                if (now - lcd_fast_tick >= LCD_FAST_UPDATE_MS) { LCD_UpdateGameFast(x_raw, y_raw); lcd_fast_tick = now; }
+                if (now - lcd_slow_tick >= LCD_SLOW_UPDATE_MS) { LCD_UpdateGameSlow(fire_pressed); lcd_slow_tick = now; }
             }
-            else if (selected_mode == GAME_MODE_2) {
-                // Mode 2: drawing challenge mode.
-                Mode2_Run(x_raw, y_raw, k1_click, k2_click, fire_pressed, ts_pressed, ts_click, px, py, joy_up, joy_down, joy_left, joy_right);
-            }
-            else if (selected_mode == GAME_MODE_3) {
-                // Mode 3: arena-based multiplayer with bots.
-                Mode3_Run(x_raw, y_raw, k1_click, k2_click, fire_pressed, ts_pressed, ts_click, px, py, joy_up, joy_down, joy_left, joy_right);
-            }
+            else if (selected_mode == GAME_MODE_2) Mode2_Run(x_raw, y_raw, k1_click, k2_click, fire_pressed, ts_pressed, ts_click, px, py, joy_up, joy_down, joy_left, joy_right);
+            else if (selected_mode == GAME_MODE_3) Mode3_Run(x_raw, y_raw, k1_click, k2_click, fire_pressed, ts_pressed, ts_click, px, py, joy_up, joy_down, joy_left, joy_right);
         }
 
-        // Default 7-Segment Telemetry Display Management
-        // Only update 7-seg display when seg_mode is idle (not running other display tasks).
+        // Default 7-Segment Telemetry
         if (seg_mode == SEG_IDLE) {
             if (app_state == APP_HOME) {
-                // Home screen: show "00" (both digits off).
                 SEG_ShowPair(0, 0, 0);
             }
             else if (app_state == APP_SETTINGS) {
-                // Settings screen: show "88" (all segments on).
                 SEG_ShowPair(8, 8, 0);
             }
             else if (app_state == APP_GAME) {
-                // In-game telemetry display varies by mode.
                 if (selected_mode == GAME_MODE_1) {
-                    // Mode 1: left = mode digit (1), right = car version (0-6).
-                    uint8_t left = 1;
-                    uint8_t right = (uint8_t)selected_car;
+                    uint8_t left = 1;  // Mode 1
+                    uint8_t right = (uint8_t)selected_car;  // Car 0-6
                     SEG_ShowPair(left, right, 0);
                 }
                 else if (selected_mode == GAME_MODE_2) {
-                    // Mode 2: left = mode digit (2), right = input method (1=joystick, 2=touch).
-                    uint8_t left = 2;
-                    uint8_t right = (m2_input_method == M2_INPUT_JOYSTICK) ? 1 : 2;
+                    uint8_t left = 2;  // Mode 2
+                    uint8_t right = (m2_input_method == M2_INPUT_JOYSTICK) ? 1 : 2;  // 1=joystick, 2=touch
                     SEG_ShowPair(left, right, 0);
                 }
                 else if (selected_mode == GAME_MODE_3) {
-                    // Mode 3: left = arena size (1x, 4x, 9x), right = setup phase or HP.
-                    // Arena size displayed as 1, 4, or 9.
-                    uint8_t arena_display = (m3_arena_size == M3_SIZE_DEFAULT) ? 1 :
-                                            (m3_arena_size == M3_SIZE_NORMAL) ? 4 : 9;
+                    uint8_t arena_display = (m3_arena_size == M3_SIZE_DEFAULT) ? 1 : (m3_arena_size == M3_SIZE_NORMAL) ? 4 : 9;
                     uint8_t left = arena_display;
                     uint8_t right;
-                    // Right digit shows setup phase (0=size, 1=obstacles, 2=bots) or player HP during battle.
                     if (m3_state == M3_STATE_SETUP_SIZE) right = 0;
                     else if (m3_state == M3_STATE_SETUP_OBSTACLES) right = 1;
                     else if (m3_state == M3_STATE_SETUP_BOTS) right = 2;
                     else if (m3_state == M3_STATE_BATTLE) {
-                        // During battle: show HP (0-9 or 'A' for 10+).
-                        right = (m3_hp >= 10) ? 10 : m3_hp;
+                        right = (m3_hp >= 10) ? 10 : m3_hp;  // Show A for 10+ else the number
                     }
                     else right = 0;
                     SEG_ShowPair(left, right, 0);
                 }
             }
             else {
-                // Menu states: show current mode selection for reference.
                 uint8_t left = (uint8_t)selected_mode + 1;
                 uint8_t right = (selected_mode == GAME_MODE_1) ? (uint8_t)selected_car : 0;
                 SEG_ShowPair(left, right, 0);
             }
         }
 
-        // Frame-end housekeeping tasks.
-        Buzzer_Task();      // Update buzzer state (beep timing, mute state).
-        SEG_Task();         // Update 7-segment display (multiplexing, digit switching).
-        HAL_Delay(10);      // Wait 10 ms to maintain stable frame timing (~100 Hz loop rate).
+        Buzzer_Task();
+        SEG_Task();
+        HAL_Delay(10);
     }
 }
 
 void SystemClock_Config(void)
 {
-    /* SystemClock_Config programs the clock tree so the MCU runs at the configured
-     * frequency with the correct bus prescalers and flash latency.
-     */
-
     RCC_OscInitTypeDef       o = {0};
     RCC_ClkInitTypeDef       c = {0};
     RCC_PeriphCLKInitTypeDef p = {0};
@@ -678,9 +529,6 @@ void SystemClock_Config(void)
 
 static void MX_ADC1_Init(void)
 {
-    /* MX_ADC1_Init configures the first ADC channel used to read one joystick axis.
-     */
-
     ADC_ChannelConfTypeDef s = {0};
     hadc1.Instance = ADC1;
     hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
@@ -698,10 +546,6 @@ static void MX_ADC1_Init(void)
 
 static void MX_ADC2_Init(void)
 {
-    /* MX_ADC2_Init configures the second ADC channel used to read the other
-     * joystick axis.
-     */
-
     ADC_ChannelConfTypeDef s = {0};
     hadc2.Instance = ADC2;
     hadc2.Init.ScanConvMode = ADC_SCAN_DISABLE;
@@ -719,10 +563,6 @@ static void MX_ADC2_Init(void)
 
 static void MX_I2C2_Init(void)
 {
-    /* MX_I2C2_Init prepares the I2C peripheral used by external devices on the
-     * board.
-     */
-
     hi2c2.Instance = I2C2;
     hi2c2.Init.ClockSpeed = 100000;
     hi2c2.Init.DutyCycle = I2C_DUTYCYCLE_2;
@@ -737,10 +577,6 @@ static void MX_I2C2_Init(void)
 
 static void MX_USART3_UART_Init(void)
 {
-    /* MX_USART3_UART_Init configures the UART link used to communicate with the
-     * WiFi/ESP hardware.
-     */
-
     huart3.Instance = USART3;
     huart3.Init.BaudRate = 115200;
     huart3.Init.WordLength = UART_WORDLENGTH_8B;
@@ -754,10 +590,6 @@ static void MX_USART3_UART_Init(void)
 
 static void MX_GPIO_Init(void)
 {
-    /* MX_GPIO_Init configures all board GPIO pins used by buttons, lights, and
-     * other digital control signals.
-     */
-
     GPIO_InitTypeDef g = {0};
     __HAL_RCC_GPIOA_CLK_ENABLE();
     __HAL_RCC_GPIOB_CLK_ENABLE();
@@ -810,10 +642,6 @@ static void MX_GPIO_Init(void)
 
 static void MX_FSMC_Init(void)
 {
-    /* MX_FSMC_Init configures the external memory controller that drives the LCD
-     * panel interface.
-     */
-
     FSMC_NORSRAM_TimingTypeDef t = {0};
     hsram1.Instance = FSMC_NORSRAM_DEVICE;
     hsram1.Extended = FSMC_NORSRAM_EXTENDED_DEVICE;
@@ -838,7 +666,3 @@ static void MX_FSMC_Init(void)
 }
 
 void Error_Handler(void) { __disable_irq(); while (1) {} }
-/* Error_Handler disables interrupts and loops forever so the system remains in
- * a known safe state after an unrecoverable failure.
- */
-

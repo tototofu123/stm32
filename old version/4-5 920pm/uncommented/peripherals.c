@@ -1,24 +1,3 @@
-/*
- * peripherals.c contains the shared helper functions for external hardware and
- * simple data acquisition. It covers UART communication with the ESP module,
- * WiFi setup, and joystick ADC reading helpers.
- *
- * Functions in this file:
- * - HAL_UART_RxCpltCallback: stores received UART bytes into a receive buffer.
- * - sendAT: sends an AT command through USART3.
- * - waitForResponse: waits for a specific response string from the ESP buffer.
- * - WifiSetUp: sends the startup WiFi/AP configuration sequence.
- * - WifiScan: queries nearby WiFi networks and stores SSIDs.
- * - WifiJoin: sends a join command for a selected WiFi network.
- * - read_adc1: reads the first joystick ADC channel.
- * - read_adc2: reads the second joystick ADC channel.
- * - map_u16: maps a raw integer from one range into another.
- * - DS18B20_ReadRaw: returns a placeholder temperature raw value.
- *
- * Global variables used here include wifi_line1, wifi_line2, esp_rx_byte,
- * esp_rx_buffer, esp_rx_idx, wifi_ssids, wifi_count, and the ADC/UART handles.
- * No classes are used in this C file.
- */
 #include "peripherals.h"
 #include "lcd.h"
 #include "ui.h"
@@ -35,9 +14,6 @@ uint8_t esp_rx_byte;
 char esp_rx_buffer[1024]; 
 uint16_t esp_rx_idx = 0;
 
-/* HAL_UART_RxCpltCallback stores each received UART byte and immediately arms
- * the next receive interrupt so incoming ESP data keeps flowing.
- */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
     if (huart->Instance == USART3)
@@ -50,8 +26,6 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
     }
 }
 
-/* sendAT formats and transmits an AT command plus CRLF over USART3.
- */
 void sendAT(const char *cmd)
 {
     char buf[128];
@@ -59,9 +33,6 @@ void sendAT(const char *cmd)
     HAL_UART_Transmit(&huart3, (uint8_t *)buf, strlen(buf), 100);
 }
 
-/* waitForResponse polls the ESP receive buffer until the expected response
- * string arrives or the timeout expires.
- */
 uint8_t waitForResponse(const char* target, uint32_t timeout_ms) {
     uint32_t start = HAL_GetTick();
     while ((HAL_GetTick() - start) < timeout_ms) {
@@ -71,9 +42,6 @@ uint8_t waitForResponse(const char* target, uint32_t timeout_ms) {
     return 0;
 }
 
-/* WifiSetUp sends the startup access-point configuration to the ESP module and
- * stores the local address text for the UI.
- */
 void WifiSetUp(void)
 {
     // NO BLOCKING RESET: Using faster commands and fewer delays
@@ -90,9 +58,6 @@ void WifiSetUp(void)
     strcpy(wifi_line1, "AP+STA ACTIVE");
 }
 
-/* WifiScan clears the receive buffer, requests a scan, and parses returned SSID
- * entries into the local list.
- */
 void WifiScan(void)
 {
     wifi_count = 0;
@@ -127,9 +92,6 @@ void WifiScan(void)
     }
 }
 
-/* WifiJoin sends a join request for the chosen WiFi network and updates the UI
- * text to show that a connection attempt is in progress.
- */
 void WifiJoin(const char* ssid, const char* pass)
 {
     char cmd[128];
@@ -138,9 +100,6 @@ void WifiJoin(const char* ssid, const char* pass)
     strcpy(wifi_line1, "Connecting...");
 }
 
-/* read_adc1 samples the first ADC channel and returns the current joystick X
- * reading.
- */
 uint32_t read_adc1(void)
 {
     HAL_ADC_Start(&hadc1);
@@ -150,9 +109,6 @@ uint32_t read_adc1(void)
     return val;
 }
 
-/* read_adc2 samples the second ADC channel and returns the current joystick Y
- * reading.
- */
 uint32_t read_adc2(void)
 {
     HAL_ADC_Start(&hadc2);

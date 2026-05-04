@@ -1,25 +1,3 @@
-/*
- * ui.c draws and updates every user-facing screen on the LCD, including the
- * home page, settings menu, mode select screens, car selection screens, car
- * preview panel, HUD overlays, and Mode 2 input selection pages.
- *
- * Functions in this file:
- * - CarColorByIndex: returns the palette color for a car slot.
- * - DrawCarColorChip: draws a visual color swatch for a car row.
- * - CarPreviewIndex: chooses which car should appear in the preview panel.
- * - LCD_DrawCarInfoPanel: draws the detail panel with car name and stats.
- * - LCD_ClearTextField: clears a text area before redrawing it.
- * - LCD_DrawStatusBar: draws the top status bar with WiFi/IP state.
- * - LCD_DrawBackButton: draws the back button with selected-state styling.
- * - LCD_DrawHome: renders the landing screen and its action buttons.
- * - LCD_DrawSettings: renders the settings screen and its confirm area.
- * - LCD_UpdateSettingsOption: redraws one settings row with the current value.
- *
- * Global variables used here include current_theme, audio_enabled,
- * colorblind_mode, led_enabled, seg_enabled, current_font, temp_* copies,
- * focus indices, selected_car, selected_mode, keyboard_buffer, wifi lists, and
- * last_drawn state trackers. No classes are used in this C file.
- */
 #include "ui.h"
 #include "lcd.h"
 #include "peripherals.h"
@@ -36,103 +14,52 @@ uint32_t    lcd_fast_tick = 0;
 uint32_t    lcd_slow_tick = 0;
 uint8_t     touch_display_flag = 0U;
 
-/*
- * =============================================================================
- * GLOBAL STATE VARIABLES - UI SETTINGS AND NAVIGATION
- * =============================================================================
- * Track the current display configuration and user focus/selection state.
- */
+// Global Settings Definitions
+ui_theme_t current_theme = THEME_DEFAULT;
+uint8_t    audio_enabled = 1;
+uint8_t    colorblind_mode = 0;
+uint8_t    led_enabled = 1;
+uint8_t    seg_enabled = 1;
+ui_font_t  current_font = FONT_DEFAULT;
 
-/* Live application settings (persisted across app lifetime) */
-ui_theme_t current_theme = THEME_DEFAULT;  // Active color theme.
-uint8_t    audio_enabled = 1;              // Buzzer on/off state.
-uint8_t    colorblind_mode = 0;            // Color accessibility mode.
-uint8_t    led_enabled = 1;                // RGB LED on/off state.
-uint8_t    seg_enabled = 1;                // 7-segment display on/off state.
-ui_font_t  current_font = FONT_DEFAULT;    // Current font size.
+// Temporary Settings for UI
+ui_theme_t temp_theme = THEME_DEFAULT;
+uint8_t    temp_audio = 1;
+uint8_t    temp_cb = 0;
+uint8_t    temp_led = 1;
+uint8_t    temp_seg = 1;
+ui_font_t  temp_font = FONT_DEFAULT;
+int8_t     settings_focus_idx = 0;
+int8_t     home_focus_idx = 0;
+int8_t     mode_focus_idx = 0;
+int8_t     car_focus_idx = 0;
 
-/* Temporary settings copies shown in settings menu (applied on OK, discarded on CANCEL) */
-ui_theme_t temp_theme = THEME_DEFAULT;     // Preview of theme choice.
-uint8_t    temp_audio = 1;                 // Preview of audio setting.
-uint8_t    temp_cb = 0;                    // Preview of colorblind mode.
-uint8_t    temp_led = 1;                   // Preview of LED setting.
-uint8_t    temp_seg = 1;                   // Preview of 7-seg setting.
-ui_font_t  temp_font = FONT_DEFAULT;       // Preview of font choice.
+static const uint16_t car_palette[7] = {BLUE, CYAN, GREEN, YELLOW, MAGENTA, RED, 0xFD20};
 
-/* Navigation focus indices (-1 = back button, 0-N = menu items) */
-int8_t     settings_focus_idx = 0;         // Settings menu focus (0-5 or -1).
-int8_t     home_focus_idx = 0;             // Home screen focus (unused).
-int8_t     mode_focus_idx = 0;             // Mode select focus (0-2 or -1).
-int8_t     car_focus_idx = 0;              // Car select focus (0-6 or -1).
-
-/* Car color palette for visual identification */
-static const uint16_t car_palette[7] = {
-    BLUE,    // V0 STANDARD
-    CYAN,    // V1 AUTO FIRE
-    GREEN,   // V2 RAPID SHOT
-    YELLOW,  // V3 MOVING CAST
-    MAGENTA, // V4 FORWARD SPEED
-    RED,     // V5 LONG BEAM
-    0xFD20   // V6 GUN PLATFORM (orange)
-};
-
-/*
- * CarColorByIndex:
- * Maps car index to its display color from the palette.
- * Used to highlight selected car in menus and car-select screen.
- * Input: idx (0-6 for cars, -1 or other = fallback).
- * Output: 16-bit RGB565 color value.
- */
 static uint16_t CarColorByIndex(int8_t idx)
 {
-    // Bounds check: if index out of range, return neutral bottom color.
     if (idx < 0 || idx > 6) return UI_BOTTOM;
     return car_palette[idx];
 }
 
-/*
- * DrawCarColorChip:
- * Draws a small colored square (16x16 pixels) representing a car variant.
- * Border color depends on selected state (black=selected, white=not).
- * Used in car-select rows to give visual identity to each car.
- */
 static void DrawCarColorChip(uint16_t x, uint16_t y, uint16_t color, uint8_t selected)
 {
-    // Fill the square with the car's color.
     LCD_Clear(x, y, 16, 16, color);
-    // Draw border: black if selected (prominent), white if not (subtle).
     LCD_DrawRectangle(x, y, 16, 16, selected ? BLACK : WHITE);
 }
 
-/*
- * CarPreviewIndex:
- * Determines which car should appear in the preview/stats panel.
- * When user navigates car list, preview updates to show focused car.
- * If focus is on back button or no selection, shows the confirmed car.
- */
 static car_type_t CarPreviewIndex(void)
 {
-    // If focus is on a valid car (0-6), preview that car.
     if (car_focus_idx >= 0 && car_focus_idx <= 6) return (car_type_t)car_focus_idx;
-    // Otherwise, show the already-confirmed car choice.
     return selected_car;
 }
 
-/*
- * LCD_DrawCarInfoPanel:
- * Renders the lower 1/3 detail panel showing car specifications.
- * Displays: version name, speed, charge time, fire duration, cooldown.
- * Input: car (which car to display), bg (background color).
- * This panel updates dynamically as user highlights different cars.
- */
 static void LCD_DrawCarInfoPanel(car_type_t car, uint16_t bg)
 {
-    char line1[40];  // Car version and name (e.g., "V0 STANDARD").
-    char line2[40];  // Speed stat.
-    char line3[40];  // Charge and fire duration.
-    // char line4[40];  // Cooldown (not shown, would overflow).
+    char line1[40];
+    char line2[40];
+    char line3[40];
 
-    // Build display strings for selected car.
     switch (car) {
         case CAR_V0:
             strcpy(line1, "V0 STANDARD");
@@ -192,17 +119,11 @@ int8_t selected_wifi_idx = -1;
 char keyboard_buffer[33] = "";
 uint8_t kb_shift = 0;
 
-/* LCD_ClearTextField clears a text region before the next label is drawn so old
- * characters do not remain on the screen.
- */
 void LCD_ClearTextField(uint16_t x, uint16_t y, uint16_t chars, uint16_t bg)
 {
     LCD_Clear(x, y, chars * 10, 20, bg); 
 }
 
-/* LCD_DrawStatusBar draws the persistent top bar and shows WiFi or connection
- * state text in a compact form.
- */
 void LCD_DrawStatusBar(void)
 {
     LCD_Clear(0, 0, 240, 20, UI_HEAD);
@@ -218,9 +139,6 @@ void LCD_DrawStatusBar(void)
     LCD_SetColors(BLUE, WHITE);
 }
 
-/* LCD_DrawBackButton draws the back button and visually highlights it when the
- * current focus or touch target is active.
- */
 void LCD_DrawBackButton(uint8_t selected)
 {
     uint16_t bg = selected ? MY_GREEN : RED;
@@ -231,9 +149,6 @@ void LCD_DrawBackButton(uint8_t selected)
     LCD_SetColors(BLUE, WHITE);
 }
 
-/* LCD_DrawHome renders the home screen title, the start button, the settings
- * button, and the bottom status banner.
- */
 void LCD_DrawHome(void)
 {
     LCD_Clear(0, 0, 240, 320, UI_BG);
@@ -261,9 +176,6 @@ void LCD_DrawHome(void)
     LCD_SetColors(BLUE, WHITE);
 }
 
-/* LCD_DrawSettings renders the settings screen, redraws all option rows, and
- * places the cancel/confirm buttons at the bottom.
- */
 void LCD_DrawSettings(void)
 {
     LCD_Clear(0, 0, 240, 320, UI_BG);
@@ -291,9 +203,6 @@ void LCD_DrawSettings(void)
     LCD_SetColors(BLUE, WHITE);
 }
 
-/* LCD_UpdateSettingsOption redraws one settings row so the visible value and
- * highlight state stay in sync with the temporary settings copy.
- */
 void LCD_UpdateSettingsOption(uint8_t option_idx)
 {
     uint16_t y = 45 + (option_idx * 33);

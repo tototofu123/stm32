@@ -1,19 +1,3 @@
-/*
- * mode_2.c implements the drawing and input-selection challenge mode. It
- * maintains the canvas, cursor position, movement history, timers, and the
- * setup flow that lets the player choose between joystick and touch control.
- *
- * Functions in this file:
- * - Mode2_Init: enters the input-selection screen.
- * - Mode2_ResetCanvas: clears the canvas state and starts a new drawing run.
- * - DrawCanvasArrow: draws a path-direction arrow for the movement trail.
- * - GetTimeColor: converts remaining time into a warning color.
- * - Mode2_Run: executes the Mode 2 state machine for one frame.
- *
- * Global variables used here include m2_state, m2_input_method,
- * selected_input, the path/cursor buffers, movement counters, and the shared
- * laser/motion HUD strings. No classes are used in this C file.
- */
 // mode_2.c
 #include "mode_2.h"
 #include "game_logic.h"
@@ -60,9 +44,6 @@ static uint32_t remaining_time_ms = 0;
 
 mode2_input_method_t selected_input = M2_INPUT_JOYSTICK;
 
-/* Mode2_Init prepares the input-selection page, resets the state, and updates
- * the 7-segment display for Mode 2.
- */
 void Mode2_Init(void) {
 m2_state = M2_STATE_INPUT_SELECT;
 selected_input = M2_INPUT_JOYSTICK;
@@ -71,9 +52,6 @@ LCD_DrawMode2InputSelect();
 SEG_ShowPair(0, 1, 0);
 }
 
-/* Mode2_ResetCanvas clears the path buffers, resets the cursor, and switches
- * the mode into active drawing.
- */
 void Mode2_ResetCanvas(void) {
     // Standardize: First point is the start position
     m2_path_x[0] = 120;
@@ -97,9 +75,6 @@ void Mode2_ResetCanvas(void) {
     seg_mode = SEG_M2_TIMER; seg_tenths = 0;
 }
 
-/* DrawCanvasArrow draws a small directional arrow so the player can see how the
- * current stroke is moving across the canvas.
- */
 static void DrawCanvasArrow(uint16_t x, uint16_t y, int dx, int dy, uint16_t color)
 {
     if (dx == 0 && dy == 0) return;
@@ -135,9 +110,6 @@ static void DrawCanvasArrow(uint16_t x, uint16_t y, int dx, int dy, uint16_t col
     }
 }
 
-/* GetTimeColor maps remaining time to a visible warning color so the player can
- * judge urgency at a glance.
- */
 static uint16_t GetTimeColor(uint32_t ms) {
     uint32_t s = ms / 1000;
     if (s < 5)  return BLACK;

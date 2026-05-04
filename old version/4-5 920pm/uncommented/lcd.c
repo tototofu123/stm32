@@ -1,32 +1,3 @@
-/*
- * lcd.c is the low-level TFT display driver. It initializes the LCD controller,
- * clears and fills screen regions, draws primitive shapes, and renders text
- * using the font table in ascii.h.
- *
- * Functions in this file:
- * - Delay: provides a simple busy wait for LCD timing.
- * - LCD_INIT: powers up and configures the panel.
- * - LCD_Rst: toggles the LCD reset pin.
- * - LCD_BackLed_Control: controls the LCD backlight.
- * - LCD_Write_Cmd: writes a controller command.
- * - LCD_Write_Data: writes a controller data word.
- * - LCD_Read_Data: reads a controller data word.
- * - LCD_REG_Config: sends the startup register sequence.
- * - LCD_OpenWindow: selects a drawing region.
- * - LCD_FillColor: fills the current region with one color.
- * - LCD_Clear: clears a rectangular region.
- * - LCD_Read_PixelData: reads one pixel value from the panel.
- * - LCD_GetPointPixel: reads one pixel at a coordinate.
- * - LCD_DrawLine: draws a line using raster interpolation.
- * - LCD_DrawRectangle: draws a rectangle border.
- * - LCD_SetColors: sets the active text colors.
- * - LCD_DrawChar: draws one character using the active font.
- * - LCD_DrawString: draws a string.
- * - LCD_DrawDot: draws one pixel.
- *
- * Global variables used here include Current_TextColor, Current_TextBackColor,
- * and the font bitmap data from ascii.h. No classes are used in this C file.
- */
 #include "lcd.h"
 #include "ascii.h"
 #include "ui.h"
@@ -36,13 +7,8 @@ void LCD_REG_Config(void);
 void LCD_FillColor(uint32_t ulAmout_Point, uint16_t usColor);
 uint16_t LCD_Read_PixelData(void);
 
-/* Delay provides a short hardware timing pause during LCD startup.
- */
 void Delay(__IO uint32_t nCount) { for (; nCount != 0; nCount--); }
 
-/* LCD_INIT powers the display, resets the controller, loads the panel
- * configuration, and clears the screen.
- */
 void LCD_INIT(void)
 {
 	LCD_BackLed_Control(ENABLE);
@@ -51,8 +17,6 @@ void LCD_INIT(void)
 	LCD_Clear(0, 0, 240, 320, BACKGROUND);
 }
 
-/* LCD_Rst toggles the reset line so the controller starts from a clean state.
- */
 void LCD_Rst(void)
 {
 	HAL_GPIO_WritePin(LCD_RST_PORT, LCD_RST_PIN, GPIO_PIN_RESET);
@@ -61,8 +25,6 @@ void LCD_Rst(void)
 	Delay(0xAFFf << 2);
 }
 
-/* LCD_BackLed_Control switches the LCD backlight using the board's wiring.
- */
 void LCD_BackLed_Control(FunctionalState enumState)
 {
 	if (enumState)
@@ -71,24 +33,16 @@ void LCD_BackLed_Control(FunctionalState enumState)
 		HAL_GPIO_WritePin(LCD_BK_PORT, LCD_BK_PIN, GPIO_PIN_SET);
 }
 
-/* LCD_Write_Cmd writes one command word to the LCD controller through the
- * FSMC bus.
- */
 void LCD_Write_Cmd(uint16_t usCmd)
 {
 	*(__IO uint16_t *)(FSMC_Addr_LCD_CMD) = usCmd;
 }
 
-/* LCD_Write_Data writes one data word to the LCD controller through the FSMC
- * bus.
- */
 void LCD_Write_Data(uint16_t usData)
 {
 	*(__IO uint16_t *)(FSMC_Addr_LCD_DATA) = usData;
 }
 
-/* LCD_Read_Data reads one data word from the LCD controller.
- */
 uint16_t LCD_Read_Data(void)
 {
 	return (*(__IO uint16_t *)(FSMC_Addr_LCD_DATA));

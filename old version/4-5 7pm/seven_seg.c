@@ -1,26 +1,4 @@
-/*
- * seven_seg.c controls the dual 7-segment display. It exposes helper routines
- * for clearing the display, showing digits and letters, displaying commands,
- * and presenting countdown or state information to the player.
- *
- * Functions in this file:
- * - SEG_WritePin: writes one segment pin with the active-low board wiring.
- * - SEG_AllOff: turns off every segment on both displays.
- * - SEG_ShowLeft: renders a digit or letter on the left display.
- * - SEG_ShowRight: renders a digit or letter on the right display.
- * - SEG_ShowPair: updates both displays with two values at once.
- * - SEG_ShowTenths: shows a countdown value with a decimal point.
- * - SEG_ShowCmd: shows a motion/fire command symbol.
- * - SEG_StartCooldownCountdown: initializes the cooldown countdown state.
- * - SEG_ShowCustom: writes raw segment bit patterns directly.
- * - SEG_Task: updates timed display states each tick.
- *
- * Global variables used here include seg_mode, seg_tick, seg_tenths,
- * seg_left, seg_right, seg_dp, and the seg_enabled flag from ui.c. No classes
- * are used in this C file.
- */
 #include "seven_seg.h"
-#include "ui.h"
 
 // Initialize state variables
 seg_mode_t seg_mode = SEG_IDLE;
@@ -30,17 +8,11 @@ uint8_t    seg_left = 0;
 uint8_t    seg_right = 0;
 uint8_t    seg_dp = 0;
 
-/* SEG_WritePin applies the active-low wiring rule and optionally forces the
- * display off when the 7-segment feature is disabled.
- */
 void SEG_WritePin(GPIO_TypeDef *port, uint16_t pin, uint8_t on)
 {
-    if (!seg_enabled) on = 0; // Force off if 7-SEG display is disabled
     HAL_GPIO_WritePin(port, pin, on ? GPIO_PIN_RESET : GPIO_PIN_SET);
 }
 
-/* SEG_AllOff clears every segment on both physical displays.
- */
 void SEG_AllOff(void)
 {
     SEG_WritePin(LSEG_A_PORT, LSEG_A_PIN, 0);
@@ -61,12 +33,9 @@ void SEG_AllOff(void)
     SEG_WritePin(RSEG_G_PORT, RSEG_G_PIN, 0);
 }
 
-/* SEG_ShowLeft renders the requested digit or letter on the left display and
- * optionally lights the decimal point.
- */
 void SEG_ShowLeft(uint8_t d, uint8_t dp)
 {
-    static const uint8_t lut[11][7] = {
+    static const uint8_t lut[10][7] = {
         {1,1,1,1,1,1,0}, // 0
         {0,1,1,0,0,0,0}, // 1
         {1,1,0,1,1,0,1}, // 2
@@ -76,11 +45,10 @@ void SEG_ShowLeft(uint8_t d, uint8_t dp)
         {1,0,1,1,1,1,1}, // 6
         {1,1,1,0,0,0,0}, // 7
         {1,1,1,1,1,1,1}, // 8
-        {1,1,1,1,0,1,1}, // 9
-        {1,1,1,0,1,1,1}  // A (for 10, HP>=10)
+        {1,1,1,1,0,1,1}  // 9
     };
 
-    if (d > 10) d = 0;
+    if (d > 9) d = 0;
 
     SEG_WritePin(LSEG_A_PORT, LSEG_A_PIN, lut[d][0]);
     SEG_WritePin(LSEG_B_PORT, LSEG_B_PIN, lut[d][1]);
@@ -92,11 +60,9 @@ void SEG_ShowLeft(uint8_t d, uint8_t dp)
     SEG_WritePin(LSEG_DP_PORT, LSEG_DP_PIN, dp ? 1 : 0);
 }
 
-/* SEG_ShowRight renders the requested digit or letter on the right display.
- */
 void SEG_ShowRight(uint8_t d)
 {
-    static const uint8_t lut[11][7] = {
+    static const uint8_t lut[10][7] = {
         {1,1,1,1,1,1,0}, // 0
         {0,1,1,0,0,0,0}, // 1
         {1,1,0,1,1,0,1}, // 2
@@ -106,11 +72,10 @@ void SEG_ShowRight(uint8_t d)
         {1,0,1,1,1,1,1}, // 6
         {1,1,1,0,0,0,0}, // 7
         {1,1,1,1,1,1,1}, // 8
-        {1,1,1,1,0,1,1}, // 9
-        {1,1,1,0,1,1,1}  // A (for 10, HP>=10)
+        {1,1,1,1,0,1,1}  // 9
     };
 
-    if (d > 10) d = 0;
+    if (d > 9) d = 0;
 
     SEG_WritePin(RSEG_A_PORT, RSEG_A_PIN, lut[d][0]);
     SEG_WritePin(RSEG_B_PORT, RSEG_B_PIN, lut[d][1]);
@@ -121,9 +86,6 @@ void SEG_ShowRight(uint8_t d)
     SEG_WritePin(RSEG_G_PORT, RSEG_G_PIN, lut[d][6]);
 }
 
-/* SEG_ShowPair updates both displays together so the UI can show compact paired
- * state information.
- */
 void SEG_ShowPair(uint8_t left, uint8_t right, uint8_t dp)
 {
     seg_left = left;
@@ -133,9 +95,6 @@ void SEG_ShowPair(uint8_t left, uint8_t right, uint8_t dp)
     SEG_ShowRight(right);
 }
 
-/* SEG_ShowTenths formats a numeric countdown with a decimal point for the UI
- * timer display.
- */
 void SEG_ShowTenths(int t)
 {
     if (t < 0) t = 0;
@@ -143,9 +102,6 @@ void SEG_ShowTenths(int t)
     SEG_ShowPair((uint8_t)(t / 10), (uint8_t)(t % 10), 1);
 }
 
-/* SEG_ShowCmd maps command letters to segment patterns and shows the symbol on
- * both displays for a compact state indicator.
- */
 void SEG_ShowCmd(char cmd)
 {
     static const uint8_t segments[4][7] = {
@@ -175,9 +131,6 @@ void SEG_ShowCmd(char cmd)
     SEG_WritePin(LSEG_DP_PORT, LSEG_DP_PIN, 0);
 }
 
-/* SEG_StartCooldownCountdown converts a cooldown value into tenths of seconds
- * and arms the countdown timer state.
- */
 void SEG_StartCooldownCountdown(uint32_t cooldown_ms)
 {
     seg_mode = SEG_JSW_CD;
@@ -188,9 +141,6 @@ void SEG_StartCooldownCountdown(uint32_t cooldown_ms)
     SEG_ShowTenths(seg_tenths);
 }
 
-/* SEG_ShowCustom writes raw segment bitmasks directly to both displays for
- * special-purpose UI states.
- */
 void SEG_ShowCustom(uint8_t left_bits, uint8_t right_bits)
 {
     seg_mode = SEG_MODE2_CMD; // Use a mode that prevents IDLE override
@@ -214,9 +164,6 @@ void SEG_ShowCustom(uint8_t left_bits, uint8_t right_bits)
     SEG_WritePin(RSEG_G_PORT, RSEG_G_PIN, (right_bits >> 6) & 1);
 }
 
-/* SEG_Task advances countdown states and keeps the physical display synchronized
- * with the current timed mode.
- */
 void SEG_Task(void)
 {
     uint32_t now = HAL_GetTick();

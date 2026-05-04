@@ -1,48 +1,13 @@
-/*
- * lcd.c is the low-level TFT display driver. It initializes the LCD controller,
- * clears and fills screen regions, draws primitive shapes, and renders text
- * using the font table in ascii.h.
- *
- * Functions in this file:
- * - Delay: provides a simple busy wait for LCD timing.
- * - LCD_INIT: powers up and configures the panel.
- * - LCD_Rst: toggles the LCD reset pin.
- * - LCD_BackLed_Control: controls the LCD backlight.
- * - LCD_Write_Cmd: writes a controller command.
- * - LCD_Write_Data: writes a controller data word.
- * - LCD_Read_Data: reads a controller data word.
- * - LCD_REG_Config: sends the startup register sequence.
- * - LCD_OpenWindow: selects a drawing region.
- * - LCD_FillColor: fills the current region with one color.
- * - LCD_Clear: clears a rectangular region.
- * - LCD_Read_PixelData: reads one pixel value from the panel.
- * - LCD_GetPointPixel: reads one pixel at a coordinate.
- * - LCD_DrawLine: draws a line using raster interpolation.
- * - LCD_DrawRectangle: draws a rectangle border.
- * - LCD_SetColors: sets the active text colors.
- * - LCD_DrawChar: draws one character using the active font.
- * - LCD_DrawString: draws a string.
- * - LCD_DrawDot: draws one pixel.
- *
- * Global variables used here include Current_TextColor, Current_TextBackColor,
- * and the font bitmap data from ascii.h. No classes are used in this C file.
- */
 #include "lcd.h"
 #include "ascii.h"
-#include "ui.h"
 #include <math.h>
 
 void LCD_REG_Config(void);
 void LCD_FillColor(uint32_t ulAmout_Point, uint16_t usColor);
 uint16_t LCD_Read_PixelData(void);
 
-/* Delay provides a short hardware timing pause during LCD startup.
- */
 void Delay(__IO uint32_t nCount) { for (; nCount != 0; nCount--); }
 
-/* LCD_INIT powers the display, resets the controller, loads the panel
- * configuration, and clears the screen.
- */
 void LCD_INIT(void)
 {
 	LCD_BackLed_Control(ENABLE);
@@ -51,8 +16,6 @@ void LCD_INIT(void)
 	LCD_Clear(0, 0, 240, 320, BACKGROUND);
 }
 
-/* LCD_Rst toggles the reset line so the controller starts from a clean state.
- */
 void LCD_Rst(void)
 {
 	HAL_GPIO_WritePin(LCD_RST_PORT, LCD_RST_PIN, GPIO_PIN_RESET);
@@ -61,8 +24,6 @@ void LCD_Rst(void)
 	Delay(0xAFFf << 2);
 }
 
-/* LCD_BackLed_Control switches the LCD backlight using the board's wiring.
- */
 void LCD_BackLed_Control(FunctionalState enumState)
 {
 	if (enumState)
@@ -71,24 +32,16 @@ void LCD_BackLed_Control(FunctionalState enumState)
 		HAL_GPIO_WritePin(LCD_BK_PORT, LCD_BK_PIN, GPIO_PIN_SET);
 }
 
-/* LCD_Write_Cmd writes one command word to the LCD controller through the
- * FSMC bus.
- */
 void LCD_Write_Cmd(uint16_t usCmd)
 {
 	*(__IO uint16_t *)(FSMC_Addr_LCD_CMD) = usCmd;
 }
 
-/* LCD_Write_Data writes one data word to the LCD controller through the FSMC
- * bus.
- */
 void LCD_Write_Data(uint16_t usData)
 {
 	*(__IO uint16_t *)(FSMC_Addr_LCD_DATA) = usData;
 }
 
-/* LCD_Read_Data reads one data word from the LCD controller.
- */
 uint16_t LCD_Read_Data(void)
 {
 	return (*(__IO uint16_t *)(FSMC_Addr_LCD_DATA));
@@ -210,53 +163,24 @@ void LCD_DrawChar(uint16_t usC, uint16_t usP, const char cChar)
 {
 	uint8_t ucTemp, ucRelativePositon, ucPage, ucColumn;
 	ucRelativePositon = cChar - ' ';
-    
-    if (current_font == FONT_LARGE) {
-        // Medium Scale (1.25x -> 10x20 pixels)
-        // Repeat every 4th column (8->10) and every 4th row (16->20)
-        LCD_OpenWindow(usC, usP, 10, 20);
-        LCD_Write_Cmd(CMD_SetPixel);
-        
-        for (ucPage = 0; ucPage < HEIGHT_EN_CHAR; ucPage++) {
-            ucTemp = ucAscii_1608[ucRelativePositon][ucPage];
-            
-            // Repeat this row if it's every 4th row (index 3, 7, 11, 15)
-            uint8_t repeat_row = ((ucPage + 1) % 4 == 0) ? 2 : 1;
-            
-            for (uint8_t r = 0; r < repeat_row; r++) {
-                uint8_t temp_row = ucTemp;
-                for (ucColumn = 0; ucColumn < WIDTH_EN_CHAR; ucColumn++) {
-                    uint16_t color = (temp_row & 0x01) ? Current_TextColor : Current_TextBackColor;
-                    LCD_Write_Data(color);
-                    // Repeat every 4th column
-                    if ((ucColumn + 1) % 4 == 0) LCD_Write_Data(color);
-                    temp_row >>= 1;
-                }
-            }
-        }
-    } else {
-        LCD_OpenWindow(usC, usP, WIDTH_EN_CHAR, HEIGHT_EN_CHAR);
-        LCD_Write_Cmd(CMD_SetPixel);
-        for (ucPage = 0; ucPage < HEIGHT_EN_CHAR; ucPage++) {
-            ucTemp = ucAscii_1608[ucRelativePositon][ucPage];
-            for (ucColumn = 0; ucColumn < WIDTH_EN_CHAR; ucColumn++) {
-                if (ucTemp & 0x01) LCD_Write_Data(Current_TextColor); else LCD_Write_Data(Current_TextBackColor);
-                ucTemp >>= 1;
-            }
-        }
-    }
+	LCD_OpenWindow(usC, usP, WIDTH_EN_CHAR, HEIGHT_EN_CHAR);
+	LCD_Write_Cmd(CMD_SetPixel);
+	for (ucPage = 0; ucPage < HEIGHT_EN_CHAR; ucPage++) {
+		ucTemp = ucAscii_1608[ucRelativePositon][ucPage];
+		for (ucColumn = 0; ucColumn < WIDTH_EN_CHAR; ucColumn++) {
+			if (ucTemp & 0x01) LCD_Write_Data(Current_TextColor); else LCD_Write_Data(Current_TextBackColor);
+			ucTemp >>= 1;
+		}
+	}
 }
 
 void LCD_DrawString(uint16_t usC, uint16_t usP, const char *pStr)
 {
-    uint8_t char_w = (current_font == FONT_LARGE) ? 10 : WIDTH_EN_CHAR;
-    uint8_t char_h = (current_font == FONT_LARGE) ? 20 : HEIGHT_EN_CHAR;
-
 	while (*pStr != '\0') {
-		if ((usC - LCD_DispWindow_Start_COLUMN + char_w) > LCD_DispWindow_COLUMN) { usC = LCD_DispWindow_Start_COLUMN; usP += char_h; }
-		if ((usP - LCD_DispWindow_Start_PAGE + char_h) > LCD_DispWindow_PAGE) { usC = LCD_DispWindow_Start_COLUMN; usP = LCD_DispWindow_Start_PAGE; }
+		if ((usC - LCD_DispWindow_Start_COLUMN + WIDTH_EN_CHAR) > LCD_DispWindow_COLUMN) { usC = LCD_DispWindow_Start_COLUMN; usP += HEIGHT_EN_CHAR; }
+		if ((usP - LCD_DispWindow_Start_PAGE + HEIGHT_EN_CHAR) > LCD_DispWindow_PAGE) { usC = LCD_DispWindow_Start_COLUMN; usP = LCD_DispWindow_Start_PAGE; }
 		LCD_DrawChar(usC, usP, *pStr);
-		pStr++; usC += char_w;
+		pStr++; usC += WIDTH_EN_CHAR;
 	}
 }
 
