@@ -29,86 +29,10 @@ uint8_t    temp_cb = 0;
 uint8_t    temp_led = 1;
 uint8_t    temp_seg = 1;
 ui_font_t  temp_font = FONT_DEFAULT;
-int8_t     settings_focus_idx = 0;
+uint8_t    settings_focus_idx = 0;
 int8_t     home_focus_idx = 0;
 int8_t     mode_focus_idx = 0;
 int8_t     car_focus_idx = 0;
-
-static const uint16_t car_palette[7] = {BLUE, CYAN, GREEN, YELLOW, MAGENTA, RED, 0xFD20};
-
-static uint16_t CarColorByIndex(int8_t idx)
-{
-    if (idx < 0 || idx > 6) return UI_BOTTOM;
-    return car_palette[idx];
-}
-
-static void DrawCarColorChip(uint16_t x, uint16_t y, uint16_t color, uint8_t selected)
-{
-    LCD_Clear(x, y, 16, 16, color);
-    LCD_DrawRectangle(x, y, 16, 16, selected ? BLACK : WHITE);
-}
-
-static car_type_t CarPreviewIndex(void)
-{
-    if (car_focus_idx >= 0 && car_focus_idx <= 6) return (car_type_t)car_focus_idx;
-    return selected_car;
-}
-
-static void LCD_DrawCarInfoPanel(car_type_t car, uint16_t bg)
-{
-    char line1[40];
-    char line2[40];
-    char line3[40];
-
-    switch (car) {
-        case CAR_V0:
-            strcpy(line1, "V0 STANDARD");
-            strcpy(line2, "SPD:100  CHG:1000");
-            strcpy(line3, "FIRE:1000  CD:3000");
-            break;
-        case CAR_V1:
-            strcpy(line1, "V1 AUTO FIRE");
-            strcpy(line2, "SPD:70   CHG:1000");
-            strcpy(line3, "FIRE:1000  CD:3000");
-            break;
-        case CAR_V2:
-            strcpy(line1, "V2 RAPID SHOT");
-            strcpy(line2, "SPD:100  CHG:1000");
-            strcpy(line3, "FIRE:500   CD:1500");
-            break;
-        case CAR_V3:
-            strcpy(line1, "V3 MOVING CAST");
-            strcpy(line2, "SPD:100  CHG:1000");
-            strcpy(line3, "FIRE:1000  CD:6000");
-            break;
-        case CAR_V4:
-            strcpy(line1, "V4 FORWARD SPD");
-            strcpy(line2, "SPD:200  CHG:800");
-            strcpy(line3, "FIRE:400   CD:4000");
-            break;
-        case CAR_V5:
-            strcpy(line1, "V5 LONG BEAM");
-            strcpy(line2, "SPD:100  CHG:1200");
-            strcpy(line3, "FIRE:1800  CD:5500");
-            break;
-        case CAR_V6:
-            strcpy(line1, "V6 GUN PLATFORM");
-            strcpy(line2, "SPD:60   CHG:400");
-            strcpy(line3, "FIRE:400   CD:1800");
-            break;
-        default:
-            strcpy(line1, "CAR");
-            strcpy(line2, "SPD:100  CHG:1000");
-            strcpy(line3, "FIRE:1000  CD:3000");
-            break;
-    }
-
-    LCD_Clear(0, 246, 240, 74, bg);
-    LCD_SetColors(BLACK, bg);
-    LCD_TEXT(10, 252, line1);
-    LCD_TEXT(10, 270, line2);
-    LCD_TEXT(10, 288, line3);
-}
 
 // WiFi List Variables
 char wifi_ssids[MAX_WIFI_NETWORKS][33];
@@ -139,12 +63,10 @@ void LCD_DrawStatusBar(void)
     LCD_SetColors(BLUE, WHITE);
 }
 
-void LCD_DrawBackButton(uint8_t selected)
+void LCD_DrawBackButton(void)
 {
-    uint16_t bg = selected ? MY_GREEN : RED;
-    uint16_t fg = selected ? BLACK : WHITE;
-    LCD_Clear(5, 25, 45, 22, bg);
-    LCD_SetColors(fg, bg);
+    LCD_Clear(5, 25, 45, 22, RED);
+    LCD_SetColors(WHITE, RED);
     LCD_TEXT(10, 28, "BACK");
     LCD_SetColors(BLUE, WHITE);
 }
@@ -180,12 +102,12 @@ void LCD_DrawSettings(void)
 {
     LCD_Clear(0, 0, 240, 320, UI_BG);
     LCD_DrawStatusBar();
-    LCD_DrawBackButton(settings_focus_idx == -1);
+    LCD_DrawBackButton();
     
     LCD_SetColors(BLACK, UI_BG);
     LCD_TEXT(80, 25, "SETTINGS");
     
-    for (uint8_t i = 0; i < 6; i++) {
+    for (uint8_t i = 0; i < 7; i++) {
         LCD_UpdateSettingsOption(i);
     }
     
@@ -257,6 +179,14 @@ void LCD_UpdateSettingsOption(uint8_t option_idx)
                 LCD_TEXT(45, y, font_buf);
             }
             break;
+        case 6: // WiFi
+            {
+                LCD_Clear(20, y - 4, 200, 28, (settings_focus_idx == 6) ? BLUE : DARK_GRAY);
+                LCD_DrawRectangle(20, y - 4, 200, 28, BLACK);
+                LCD_SetColors(WHITE, (settings_focus_idx == 6) ? BLUE : DARK_GRAY);
+                LCD_TEXT(55, y, "WIFI CONFIG >");
+            }
+            break;
     }
 }
 
@@ -264,7 +194,7 @@ void LCD_DrawWiFiSettings(void)
 {
     LCD_Clear(0, 0, 240, 320, UI_BG);
     LCD_DrawStatusBar();
-    LCD_DrawBackButton(0);
+    LCD_DrawBackButton();
     
     LCD_SetColors(BLACK, UI_BG);
     LCD_TEXT(60, 30, "WIFI CONFIG");
@@ -382,7 +312,7 @@ void LCD_DrawModeSelect(void)
 {
     LCD_Clear(0, 0, 240, 320, UI_BG);
     LCD_DrawStatusBar();
-    LCD_DrawBackButton(mode_focus_idx == -1);
+    LCD_DrawBackButton();
     LCD_SetColors(BLACK, UI_BG);
     LCD_TEXT(60, 32, "CHOOSE OPERATION");
 
@@ -424,8 +354,6 @@ void LCD_UpdateModeSelection(void)
     LCD_DrawRectangle(20, 180, 200, 40, BLACK);
     LCD_SetColors(BLACK, (mode_focus_idx == 2) ? UI_BOX_SEL : UI_BOX_NSEL);
     LCD_TEXT(60, 192, "MODE 3: MAP");
-
-    LCD_DrawBackButton(mode_focus_idx == -1);
 }
 
 void LCD_DrawModeConfirm(void)
@@ -457,11 +385,9 @@ void LCD_DrawModeConfirm(void)
 void LCD_DrawCarSelect(void)
 {
     char line[32];
-    car_type_t preview_car = CarPreviewIndex();
-    uint16_t preview_color = CarColorByIndex(preview_car);
     LCD_Clear(0, 0, 240, 320, UI_BG);
     LCD_DrawStatusBar();
-    LCD_DrawBackButton(car_focus_idx == -1);
+    LCD_DrawBackButton();
     LCD_SetColors(BLACK, UI_BG);
     LCD_TEXT(60, 28, "SELECT CHASSIS");
 
@@ -471,37 +397,38 @@ void LCD_DrawCarSelect(void)
     for (int i = 0; i < 7; i++) {
         uint16_t y = 64 + (i * 26);
         uint16_t color = (car_focus_idx == i) ? UI_BOX_SEL : UI_BOX_NSEL;
-        uint16_t chip_color = CarColorByIndex((int8_t)i);
         LCD_Clear(14, y, 212, 24, color);
         LCD_DrawRectangle(14, y, 212, 24, BLACK);
         LCD_SetColors(BLACK, color);
         const char* labels[] = {"V0 STANDARD", "V1 AUTO FIRE", "V2 RAPID SHOT", "V3 MOVING CAST", "V4 FORWARD SPD", "V5 LONG BEAM", "V6 GUN PLATFORM"};
-        DrawCarColorChip(18, y + 4, chip_color, car_focus_idx == i);
-        LCD_TEXT(40, y+2, labels[i]);
+        LCD_TEXT(20, y+2, labels[i]);
     }
 
-    LCD_DrawCarInfoPanel(preview_car, preview_color);
+    LCD_Clear(0, 246, 240, 74, UI_BOTTOM);
+    LCD_SetColors(WHITE, UI_BOTTOM);
+    LCD_TEXT(10, 256, "CAR:");
+    LCD_TEXT(60, 256, (char *)CAR_Code(selected_car));
+    LCD_TEXT(10, 278, "TYPE:");
+    LCD_TEXT(60, 278, (char *)CAR_Label(selected_car));
 }
 
 void LCD_UpdateCarSelection(void)
 {
-    car_type_t preview_car = CarPreviewIndex();
-    uint16_t preview_color = CarColorByIndex(preview_car);
-
     for (int i = 0; i < 7; i++) {
         uint16_t y = 64 + (i * 26);
         uint16_t color = (car_focus_idx == i) ? UI_BOX_SEL : UI_BOX_NSEL;
-        uint16_t chip_color = CarColorByIndex((int8_t)i);
         LCD_Clear(14, y, 212, 24, color);
         LCD_DrawRectangle(14, y, 212, 24, BLACK);
         LCD_SetColors(BLACK, color);
         const char* labels[] = {"V0 STANDARD", "V1 AUTO FIRE", "V2 RAPID SHOT", "V3 MOVING CAST", "V4 FORWARD SPD", "V5 LONG BEAM", "V6 GUN PLATFORM"};
-        DrawCarColorChip(18, y + 4, chip_color, car_focus_idx == i);
-        LCD_TEXT(40, y+2, labels[i]);
+        LCD_TEXT(20, y+2, labels[i]);
     }
 
-    LCD_DrawCarInfoPanel(preview_car, preview_color);
-    LCD_DrawBackButton(car_focus_idx == -1);
+    LCD_SetColors(WHITE, UI_BOTTOM);
+    LCD_ClearTextField(60, 256, 8, UI_BOTTOM);
+    LCD_TEXT(60, 256, (char *)CAR_Code(selected_car));
+    LCD_ClearTextField(60, 278, 20, UI_BOTTOM);
+    LCD_TEXT(60, 278, (char *)CAR_Label(selected_car));
 }
 
 void LCD_DrawCarConfirm(void)
@@ -545,16 +472,16 @@ void LCD_DrawGameLayout(void)
     LCD_TEXT(10, 170, "ESP:");
     LCD_TEXT(10, 190, "Touch:");
 
-    uint16_t car_color = CarColorByIndex((int8_t)selected_car);
-    LCD_Clear(0, 215, 240, 105, car_color);
-    LCD_SetColors(BLACK, car_color);
-    LCD_TEXT(10, 220, "Car:");
+    LCD_Clear(0, 215, 240, 105, UI_BOTTOM);
+    LCD_SetColors(WHITE, UI_BOTTOM);
+    LCD_TEXT(10, 225, "Car:");
+    LCD_TEXT(10, 245, "Car Type:");
 }
 
 void LCD_DrawMode2InputSelect(void) {
     LCD_Clear(0, 0, 240, 320, UI_BG);
     LCD_DrawStatusBar();
-    LCD_DrawBackButton(0);
+    LCD_DrawBackButton();
     LCD_TEXT(60, 30, "SELECT CONTROL");
     
     if (selected_input == M2_INPUT_JOYSTICK) {
@@ -719,10 +646,6 @@ void LCD_UpdateGameSlow(uint8_t fire_pressed)
     char motion_disp[24];
     char esp_disp[8];
     char touch_str[16];
-    char car_line[40];
-    char speed_line[40];
-    char charge_line[40];
-    char cooldown_line[40];
 
     if (fire_pressed) strcpy(btn_str, "PRESSED");
     else              strcpy(btn_str, "RELEASE");
@@ -736,58 +659,6 @@ void LCD_UpdateGameSlow(uint8_t fire_pressed)
     snprintf(motion_disp, sizeof(motion_disp), "%s", motion_line);
     snprintf(esp_disp, sizeof(esp_disp), "%s", esp_cmd_rx);
 
-    switch (selected_car) {
-        case CAR_V0:
-            snprintf(car_line, sizeof(car_line), "V0 STANDARD");
-            snprintf(speed_line, sizeof(speed_line), "Speed: 100");
-            snprintf(charge_line, sizeof(charge_line), "Chg: 1000ms  Fire: 1000ms");
-            snprintf(cooldown_line, sizeof(cooldown_line), "Cooldown: 3000ms");
-            break;
-        case CAR_V1:
-            snprintf(car_line, sizeof(car_line), "V1 AUTO FIRE");
-            snprintf(speed_line, sizeof(speed_line), "Speed: 70");
-            snprintf(charge_line, sizeof(charge_line), "Chg: 1000ms  Fire: 1000ms");
-            snprintf(cooldown_line, sizeof(cooldown_line), "Cooldown: 3000ms");
-            break;
-        case CAR_V2:
-            snprintf(car_line, sizeof(car_line), "V2 RAPID SHOT");
-            snprintf(speed_line, sizeof(speed_line), "Speed: 100");
-            snprintf(charge_line, sizeof(charge_line), "Chg: 1000ms  Fire: 500ms");
-            snprintf(cooldown_line, sizeof(cooldown_line), "Cooldown: 1500ms");
-            break;
-        case CAR_V3:
-            snprintf(car_line, sizeof(car_line), "V3 MOVING CAST");
-            snprintf(speed_line, sizeof(speed_line), "Speed: 100");
-            snprintf(charge_line, sizeof(charge_line), "Chg: 1000ms  Fire: 1000ms");
-            snprintf(cooldown_line, sizeof(cooldown_line), "Cooldown: 6000ms");
-            break;
-        case CAR_V4:
-            snprintf(car_line, sizeof(car_line), "V4 FORWARD SPD");
-            snprintf(speed_line, sizeof(speed_line), "Speed: 200");
-            snprintf(charge_line, sizeof(charge_line), "Chg: 800ms  Fire: 400ms");
-            snprintf(cooldown_line, sizeof(cooldown_line), "Cooldown: 4000ms");
-            break;
-        case CAR_V5:
-            snprintf(car_line, sizeof(car_line), "V5 LONG BEAM");
-            snprintf(speed_line, sizeof(speed_line), "Speed: 100");
-            snprintf(charge_line, sizeof(charge_line), "Chg: 1200ms  Fire: 1800ms");
-            snprintf(cooldown_line, sizeof(cooldown_line), "Cooldown: 5500ms");
-            break;
-        case CAR_V6:
-            snprintf(car_line, sizeof(car_line), "V6 GUN PLATFORM");
-            snprintf(speed_line, sizeof(speed_line), "Speed: 60");
-            snprintf(charge_line, sizeof(charge_line), "Chg: 400ms  Fire: 400ms");
-            snprintf(cooldown_line, sizeof(cooldown_line), "Cooldown: 1800ms");
-            break;
-        default:
-            snprintf(car_line, sizeof(car_line), "UNKNOWN CAR");
-            snprintf(speed_line, sizeof(speed_line), "Speed: 100");
-            snprintf(charge_line, sizeof(charge_line), "Chg: 1000ms  Fire: 1000ms");
-            snprintf(cooldown_line, sizeof(cooldown_line), "Cooldown: 3000ms");
-            break;
-    }
-
-    LCD_SetColors(BLACK, UI_BG);
     LCD_ClearTextField(110, 110, 12, UI_BG);
     LCD_TEXT(110, 110, btn_str);
 
@@ -803,19 +674,9 @@ void LCD_UpdateGameSlow(uint8_t fire_pressed)
     LCD_ClearTextField(110, 190, 12, UI_BG);
     LCD_TEXT(110, 190, touch_str);
 
-    uint16_t car_color = CarColorByIndex((int8_t)selected_car);
-    LCD_Clear(0, 215, 240, 105, car_color);
-    LCD_SetColors(BLACK, car_color);
-    
-    LCD_ClearTextField(10, 220, 30, car_color);
-    LCD_TEXT(10, 220, car_line);
-    
-    LCD_ClearTextField(10, 238, 30, car_color);
-    LCD_TEXT(10, 238, speed_line);
-    
-    LCD_ClearTextField(10, 256, 40, car_color);
-    LCD_TEXT(10, 256, charge_line);
-    
-    LCD_ClearTextField(10, 274, 30, car_color);
-    LCD_TEXT(10, 274, cooldown_line);
+    LCD_ClearTextField(110, 225, 12, UI_BOTTOM);
+    LCD_TEXT(110, 225, (char *)CAR_Code(selected_car));
+
+    LCD_ClearTextField(110, 245, 12, UI_BOTTOM);
+    LCD_TEXT(110, 245, (char *)CAR_Label(selected_car));
 }

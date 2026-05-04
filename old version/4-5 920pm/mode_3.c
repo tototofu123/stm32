@@ -372,7 +372,7 @@ static void Mode3_RenderArena(void) {
 }
 
 void LCD_DrawMode3SetupSize(void) {
-    LCD_Clear(0, 0, 240, 320, UI_BG); LCD_DrawStatusBar(); LCD_DrawBackButton(0);
+    LCD_Clear(0, 0, 240, 320, UI_BG); LCD_DrawStatusBar(); LCD_DrawBackButton();
     LCD_SetColors(BLACK, UI_BG); LCD_TEXT(60, 30, "ARENA SETUP (1/3)");
     LCD_UpdateMode3SetupSize();
 }
@@ -392,7 +392,7 @@ void LCD_UpdateMode3SetupSize(void) {
 }
 
 void LCD_DrawMode3SetupObstacles(void) {
-    LCD_Clear(0, 0, 240, 320, UI_BG); LCD_DrawStatusBar(); LCD_DrawBackButton(0);
+    LCD_Clear(0, 0, 240, 320, UI_BG); LCD_DrawStatusBar(); LCD_DrawBackButton();
     LCD_SetColors(BLACK, UI_BG); LCD_TEXT(60, 30, "ARENA SETUP (2/3)");
     LCD_UpdateMode3SetupObstacles();
 }
@@ -438,7 +438,7 @@ void LCD_UpdateMode3SetupObstacles(void) {
 }
 
 void LCD_DrawMode3SetupBots(void) {
-    LCD_Clear(0, 0, 240, 320, UI_BG); LCD_DrawStatusBar(); LCD_DrawBackButton(0);
+    LCD_Clear(0, 0, 240, 320, UI_BG); LCD_DrawStatusBar(); LCD_DrawBackButton();
     LCD_SetColors(BLACK, UI_BG); LCD_TEXT(60, 30, "ARENA SETUP (3/3)");
     LCD_UpdateMode3SetupBots();
 }
@@ -667,7 +667,12 @@ void Mode3_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
                     float cx=nx+os[j][0], cy=ny+os[j][1]; int r=(int)cy/TILE_SIZE, c=(int)cx/TILE_SIZE;
                     if (cx<2 || cx>world_w-2 || cy<2 || cy>world_h-2 || (r>=0 && r<100 && c>=0 && c<80 && arena_grid[r][c]==TILE_WALL)) { can=0; break; }
                 }
-                // Allow movement closer to other tanks - let proximity collision handle it
+                if (can) {
+                    for(int k=0; k<4; k++) {
+                        if (k == i || !tanks[k].active || tanks[k].hp <= 0) continue;
+                        if (abs((int)nx - (int)tanks[k].x) < 15 && abs((int)ny - (int)tanks[k].y) < 15) { can = 0; break; }
+                    }
+                }
                 if (can) { tanks[i].x = nx; tanks[i].y = ny; }
             }
             
@@ -676,14 +681,14 @@ void Mode3_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
                 if (k == i || !tanks[k].active || tanks[k].hp <= 0) continue;
                 float dist = sqrt((tanks[i].x - tanks[k].x) * (tanks[i].x - tanks[k].x) + 
                                   (tanks[i].y - tanks[k].y) * (tanks[i].y - tanks[k].y));
-                if (dist < 14.0f && dist > 0.1f) {
+                if (dist < 12.0f && dist > 0.1f) {
                     // Bounce back and lose 1 HP each
                     float dx = (tanks[i].x - tanks[k].x) / dist;
                     float dy = (tanks[i].y - tanks[k].y) / dist;
-                    tanks[i].x += dx * 6.0f;
-                    tanks[i].y += dy * 6.0f;
-                    tanks[k].x -= dx * 6.0f;
-                    tanks[k].y -= dy * 6.0f;
+                    tanks[i].x += dx * 3.0f;
+                    tanks[i].y += dy * 3.0f;
+                    tanks[k].x -= dx * 3.0f;
+                    tanks[k].y -= dy * 3.0f;
                     if (tanks[i].shield_timer <= now) tanks[i].hp--;
                     if (tanks[k].shield_timer <= now) tanks[k].hp--;
                     if (k == 0 || i == 0) LCD_DrawMode3HUD();

@@ -144,7 +144,7 @@ void Mode2_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
                 else { selected_input = touched_input; LCD_UpdateMode2InputSelect(); SEG_ShowPair(0, selected_input + 1, 0); Buzzer_BeepShort(); HAL_Delay(50); }
             }
         }
-        if (fire_pressed || k2_click) { m2_input_method = selected_input; Buzzer_BeepShort(); Mode2_ResetCanvas(); }
+        if (k2_click) { m2_input_method = selected_input; Buzzer_BeepShort(); Mode2_ResetCanvas(); }
     }
     else if (m2_state == M2_STATE_DRAWING) {
         uint16_t old_x = m2_cursor_x; uint16_t old_y = m2_cursor_y;

@@ -40,7 +40,6 @@ typedef enum {
 #define TILE_SHIELD     7 // Reflect damage
 
 // Arena Config
-extern mode3_state_t m3_state;
 extern mode3_size_t m3_arena_size;
 extern uint8_t      m3_use_walls;
 extern uint8_t      m3_use_rivers;

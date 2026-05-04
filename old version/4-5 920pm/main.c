@@ -135,14 +135,7 @@ int main(void)
         uint8_t fire_pressed = (joy_sw_now == GPIO_PIN_RESET) ? 1 : 0;
         
         if (cap_now == GPIO_PIN_RESET && last_cap_state == GPIO_PIN_SET) {
-            if (app_state == APP_MODE_SELECT) {
-                selected_mode = (mode_focus_idx >= 0) ? (game_mode_t)mode_focus_idx : GAME_MODE_1;
-                selected_car = CAR_V0;
-                app_state = APP_GAME;
-                Buzzer_BeepShort();
-            } else {
-                SpecialAbility_ResetCooldown();
-            }
+            SpecialAbility_ResetCooldown();
         }
         last_cap_state = cap_now;
         
@@ -220,27 +213,16 @@ int main(void)
 
         // --- Navigation Logic (Touch & HW) ---
         if (app_state == APP_HOME) {
-            if (k1_click) {
-                app_state = APP_MODE_SELECT;
-                Buzzer_BeepShort();
-            }
-            if (k2_click) {
-                app_state = APP_SETTINGS;
-                temp_theme = current_theme;
-                temp_audio = audio_enabled;
-                temp_cb = colorblind_mode;
-                temp_led = led_enabled;
-                temp_seg = seg_enabled;
-                temp_font = current_font;
-                Buzzer_BeepShort();
-            }
+            // Touch: direct single-click navigation (no focus needed)
             if (ts_click) {
                 if (px >= 20 && px <= 220) {
                     if (py >= 100 && py <= 160) {
+                        // START BATTLE clicked
                         app_state = APP_MODE_SELECT;
                         Buzzer_BeepShort();
                     }
                     else if (py >= 180 && py <= 240) {
+                        // PREFERENCES clicked
                         app_state = APP_SETTINGS;
                         temp_theme = current_theme;
                         temp_audio = audio_enabled;
@@ -254,45 +236,32 @@ int main(void)
             }
         }
         else if (app_state == APP_SETTINGS) {
-            if (joy_down || k1_click) {
-                if (settings_focus_idx < 5) settings_focus_idx++;
-                else settings_focus_idx = -1;
-                LCD_DrawSettings();
-                Buzzer_BeepShort();
-            }
-            if (joy_up) {
-                if (settings_focus_idx == -1) settings_focus_idx = 5;
-                else if (settings_focus_idx > 0) settings_focus_idx--;
-                else settings_focus_idx = -1;
-                LCD_DrawSettings();
-                Buzzer_BeepShort();
-            }
+            if (joy_down || k1_click) { settings_focus_idx = (settings_focus_idx + 1) % 7; LCD_DrawSettings(); Buzzer_BeepShort(); }
+            if (joy_up)   { settings_focus_idx = (settings_focus_idx + 6) % 7; LCD_DrawSettings(); Buzzer_BeepShort(); }
+            // Joystick button or K2 in settings toggles or enters
             if ((fire_pressed || k2_click) && ((now - last_k2_event_tick) >= 300)) {
                 last_k2_event_tick = now;
-                if (settings_focus_idx == -1) {
-                    app_state = APP_HOME;
-                    Buzzer_BeepShort();
-                } else {
-                    if (settings_focus_idx == 0) temp_theme = (ui_theme_t)((temp_theme + 1) % 3);
-                    else if (settings_focus_idx == 1) { temp_audio = !temp_audio; Buzzer_SetMute(!temp_audio); }
-                    else if (settings_focus_idx == 2) temp_cb = !temp_cb;
-                    else if (settings_focus_idx == 3) temp_led = !temp_led;
-                    else if (settings_focus_idx == 4) temp_seg = !temp_seg;
-                    else if (settings_focus_idx == 5) temp_font = (ui_font_t)((temp_font + 1) % 2);
-                    LCD_UpdateSettingsOption((uint8_t)settings_focus_idx);
-                    Buzzer_BeepShort();
-                }
+                if (settings_focus_idx == 0) temp_theme = (ui_theme_t)((temp_theme + 1) % 3);
+                else if (settings_focus_idx == 1) { temp_audio = !temp_audio; Buzzer_SetMute(!temp_audio); }
+                else if (settings_focus_idx == 2) temp_cb = !temp_cb;
+                else if (settings_focus_idx == 3) temp_led = !temp_led;
+                else if (settings_focus_idx == 4) temp_seg = !temp_seg;
+                else if (settings_focus_idx == 5) temp_font = (ui_font_t)((temp_font + 1) % 2);
+                else if (settings_focus_idx == 6) app_state = APP_WIFI_SETTINGS;
+                LCD_UpdateSettingsOption(settings_focus_idx);
+                Buzzer_BeepShort();
             }
 
             if (ts_click) {
                 uint8_t hit = 0;
-                int8_t new_idx = settings_focus_idx;
+                uint8_t new_idx = settings_focus_idx;
                 if (py >= 41 && py <= 74) { new_idx = 0; hit = 1; }
                 else if (py >= 74 && py <= 107) { new_idx = 1; hit = 1; }
                 else if (py >= 107 && py <= 140) { new_idx = 2; hit = 1; }
                 else if (py >= 140 && py <= 173) { new_idx = 3; hit = 1; }
                 else if (py >= 173 && py <= 206) { new_idx = 4; hit = 1; }
                 else if (py >= 206 && py <= 239) { new_idx = 5; hit = 1; }
+                else if (py >= 239 && py <= 272) { new_idx = 6; hit = 1; }
 
                 if (hit) {
                     if (new_idx == settings_focus_idx) {
@@ -302,12 +271,13 @@ int main(void)
                         else if (new_idx == 3) temp_led = !temp_led;
                         else if (new_idx == 4) temp_seg = !temp_seg;
                         else if (new_idx == 5) temp_font = (ui_font_t)((temp_font + 1) % 2);
-                        LCD_UpdateSettingsOption((uint8_t)new_idx);
+                        else if (new_idx == 6) app_state = APP_WIFI_SETTINGS;
+                        LCD_UpdateSettingsOption(new_idx);
                     } else {
-                        int8_t old = settings_focus_idx;
+                        uint8_t old = settings_focus_idx;
                         settings_focus_idx = new_idx;
-                        LCD_UpdateSettingsOption((uint8_t)old);
-                        LCD_UpdateSettingsOption((uint8_t)new_idx);
+                        LCD_UpdateSettingsOption(old);
+                        LCD_UpdateSettingsOption(new_idx);
                     }
                     Buzzer_BeepShort();
                 }
@@ -325,26 +295,11 @@ int main(void)
             }
         }
         else if (app_state == APP_MODE_SELECT) {
-            if (joy_down || k1_click) {
-                if (mode_focus_idx < 2) mode_focus_idx++;
-                else mode_focus_idx = -1;
-                LCD_UpdateModeSelection();
-                Buzzer_BeepShort();
-            }
-            if (joy_up) {
-                if (mode_focus_idx == -1) mode_focus_idx = 2;
-                else if (mode_focus_idx > 0) mode_focus_idx--;
-                else mode_focus_idx = -1;
-                LCD_UpdateModeSelection();
-                Buzzer_BeepShort();
-            }
+            if (joy_down || k1_click) { mode_focus_idx = (mode_focus_idx + 1) % 3; LCD_UpdateModeSelection(); Buzzer_BeepShort(); }
+            if (joy_up)   { mode_focus_idx = (mode_focus_idx + 2) % 3; LCD_UpdateModeSelection(); Buzzer_BeepShort(); }
             if ((fire_pressed || k2_click) && ((now - last_k2_event_tick) >= 300)) {
-                if (mode_focus_idx == -1) {
-                    app_state = APP_HOME;
-                } else {
-                    selected_mode = (game_mode_t)mode_focus_idx;
-                    app_state = APP_MODE_CONFIRM;
-                }
+                selected_mode = (game_mode_t)mode_focus_idx;
+                app_state = APP_MODE_CONFIRM;
                 last_k2_event_tick = now;
                 Buzzer_BeepShort();
             }
@@ -361,7 +316,7 @@ int main(void)
                             selected_mode = (game_mode_t)new_idx;
                             app_state = APP_MODE_CONFIRM;
                         } else {
-                            mode_focus_idx = (int8_t)new_idx;
+                            mode_focus_idx = new_idx;
                             LCD_UpdateModeSelection();
                         }
                         Buzzer_BeepShort();
@@ -371,8 +326,7 @@ int main(void)
         }
         else if (app_state == APP_MODE_CONFIRM) {
             if (k1_click) { app_state = APP_MODE_SELECT; Buzzer_BeepShort(); }
-            if ((fire_pressed || k2_click) && ((now - last_k2_event_tick) >= 300)) {
-                last_k2_event_tick = now;
+            if (k2_click) {
                 // Skip car select for Mode 2 and Mode 3; just change state and let main loop init
                 if (selected_mode == GAME_MODE_2 || selected_mode == GAME_MODE_3) { app_state = APP_GAME; }
                 else { app_state = APP_CAR_SELECT; }
@@ -390,26 +344,11 @@ int main(void)
             }
         }
         else if (app_state == APP_CAR_SELECT) {
-            if (joy_down || k1_click) {
-                if (car_focus_idx < 6) car_focus_idx++;
-                else car_focus_idx = -1;
-                LCD_UpdateCarSelection();
-                Buzzer_BeepShort();
-            }
-            if (joy_up) {
-                if (car_focus_idx == -1) car_focus_idx = 6;
-                else if (car_focus_idx > 0) car_focus_idx--;
-                else car_focus_idx = -1;
-                LCD_UpdateCarSelection();
-                Buzzer_BeepShort();
-            }
+            if (joy_down || k1_click) { car_focus_idx = (car_focus_idx + 1) % 7; LCD_UpdateCarSelection(); Buzzer_BeepShort(); }
+            if (joy_up)   { car_focus_idx = (car_focus_idx + 6) % 7; LCD_UpdateCarSelection(); Buzzer_BeepShort(); }
             if ((fire_pressed || k2_click) && ((now - last_k2_event_tick) >= 300)) {
-                if (car_focus_idx == -1) {
-                    app_state = APP_MODE_SELECT;
-                } else {
-                    selected_car = (car_type_t)car_focus_idx;
-                    app_state = APP_CAR_CONFIRM;
-                }
+                selected_car = (car_type_t)car_focus_idx;
+                app_state = APP_CAR_CONFIRM;
                 last_k2_event_tick = now;
                 Buzzer_BeepShort();
             }
@@ -432,11 +371,7 @@ int main(void)
         }
         else if (app_state == APP_CAR_CONFIRM) {
             if (k1_click) { app_state = APP_CAR_SELECT; Buzzer_BeepShort(); }
-            if ((fire_pressed || k2_click) && ((now - last_k2_event_tick) >= 300)) {
-                last_k2_event_tick = now;
-                app_state = APP_GAME;
-                Buzzer_BeepShort();
-            }
+            if (k2_click) { app_state = APP_GAME; Buzzer_BeepShort(); }
             if (ts_click) {
                 if (py >= 190 && py <= 235) {
                     if (px >= 10 && px <= 115) { app_state = APP_CAR_SELECT; Buzzer_BeepShort(); }
@@ -459,42 +394,9 @@ int main(void)
 
         // Default 7-Segment Telemetry
         if (seg_mode == SEG_IDLE) {
-            if (app_state == APP_HOME) {
-                SEG_ShowPair(0, 0, 0);
-            }
-            else if (app_state == APP_SETTINGS) {
-                SEG_ShowPair(8, 8, 0);
-            }
-            else if (app_state == APP_GAME) {
-                if (selected_mode == GAME_MODE_1) {
-                    uint8_t left = 1;  // Mode 1
-                    uint8_t right = (uint8_t)selected_car;  // Car 0-6
-                    SEG_ShowPair(left, right, 0);
-                }
-                else if (selected_mode == GAME_MODE_2) {
-                    uint8_t left = 2;  // Mode 2
-                    uint8_t right = (m2_input_method == M2_INPUT_JOYSTICK) ? 1 : 2;  // 1=joystick, 2=touch
-                    SEG_ShowPair(left, right, 0);
-                }
-                else if (selected_mode == GAME_MODE_3) {
-                    uint8_t arena_display = (m3_arena_size == M3_SIZE_DEFAULT) ? 1 : (m3_arena_size == M3_SIZE_NORMAL) ? 4 : 9;
-                    uint8_t left = arena_display;
-                    uint8_t right;
-                    if (m3_state == M3_STATE_SETUP_SIZE) right = 0;
-                    else if (m3_state == M3_STATE_SETUP_OBSTACLES) right = 1;
-                    else if (m3_state == M3_STATE_SETUP_BOTS) right = 2;
-                    else if (m3_state == M3_STATE_BATTLE) {
-                        right = (m3_hp >= 10) ? 10 : m3_hp;  // Show A for 10+ else the number
-                    }
-                    else right = 0;
-                    SEG_ShowPair(left, right, 0);
-                }
-            }
-            else {
-                uint8_t left = (uint8_t)selected_mode + 1;
-                uint8_t right = (selected_mode == GAME_MODE_1) ? (uint8_t)selected_car : 0;
-                SEG_ShowPair(left, right, 0);
-            }
+            uint8_t left = (uint8_t)selected_mode + 1;
+            uint8_t right = (selected_mode == GAME_MODE_1) ? (uint8_t)selected_car : 0;
+            SEG_ShowPair(left, right, 0);
         }
 
         Buzzer_Task();

@@ -37,7 +37,7 @@ void SEG_AllOff(void)
 
 void SEG_ShowLeft(uint8_t d, uint8_t dp)
 {
-    static const uint8_t lut[11][7] = {
+    static const uint8_t lut[10][7] = {
         {1,1,1,1,1,1,0}, // 0
         {0,1,1,0,0,0,0}, // 1
         {1,1,0,1,1,0,1}, // 2
@@ -47,11 +47,10 @@ void SEG_ShowLeft(uint8_t d, uint8_t dp)
         {1,0,1,1,1,1,1}, // 6
         {1,1,1,0,0,0,0}, // 7
         {1,1,1,1,1,1,1}, // 8
-        {1,1,1,1,0,1,1}, // 9
-        {1,1,1,0,1,1,1}  // A (for 10, HP>=10)
+        {1,1,1,1,0,1,1}  // 9
     };
 
-    if (d > 10) d = 0;
+    if (d > 9) d = 0;
 
     SEG_WritePin(LSEG_A_PORT, LSEG_A_PIN, lut[d][0]);
     SEG_WritePin(LSEG_B_PORT, LSEG_B_PIN, lut[d][1]);
@@ -65,7 +64,7 @@ void SEG_ShowLeft(uint8_t d, uint8_t dp)
 
 void SEG_ShowRight(uint8_t d)
 {
-    static const uint8_t lut[11][7] = {
+    static const uint8_t lut[10][7] = {
         {1,1,1,1,1,1,0}, // 0
         {0,1,1,0,0,0,0}, // 1
         {1,1,0,1,1,0,1}, // 2
@@ -75,11 +74,10 @@ void SEG_ShowRight(uint8_t d)
         {1,0,1,1,1,1,1}, // 6
         {1,1,1,0,0,0,0}, // 7
         {1,1,1,1,1,1,1}, // 8
-        {1,1,1,1,0,1,1}, // 9
-        {1,1,1,0,1,1,1}  // A (for 10, HP>=10)
+        {1,1,1,1,0,1,1}  // 9
     };
 
-    if (d > 10) d = 0;
+    if (d > 9) d = 0;
 
     SEG_WritePin(RSEG_A_PORT, RSEG_A_PIN, lut[d][0]);
     SEG_WritePin(RSEG_B_PORT, RSEG_B_PIN, lut[d][1]);
