@@ -132,7 +132,6 @@ void Mode3_Init(void) {
     m3_speed_timer = 0;
     m3_wings_timer = 0;
     m3_shield_timer = 0;
-    Buzzer_SetMute(1); 
     LCD_DrawMode3SetupSize();
 }
 
@@ -311,10 +310,10 @@ static void Mode3_BurstRefresh(void) {
 static void Mode3_RenderArena(void) {
     if (m3_arena_size != M3_SIZE_DEFAULT && tanks[0].active) {
         int margin_x = 60, margin_y = 80;
-        if (tanks[0].x < cam_x + margin_x) cam_x -= 40; else if (tanks[0].x > cam_x + 240 - margin_x) cam_x += 40;
-        if (tanks[0].y < cam_y + margin_y) cam_y -= 40; else if (tanks[0].y > cam_y + vp_height - margin_y) cam_y += 40;
-        if (cam_x < 0) cam_x = 0; if (cam_x > world_w - 240) cam_x = world_w - 240;
-        if (cam_y < 0) cam_y = 0; if (cam_y > world_h - vp_height) cam_y = world_h - vp_height;
+        if (tanks[0].x < cam_x + margin_x) { cam_x -= 40; } else if (tanks[0].x > cam_x + 240 - margin_x) { cam_x += 40; }
+        if (tanks[0].y < cam_y + margin_y) { cam_y -= 40; } else if (tanks[0].y > cam_y + vp_height - margin_y) { cam_y += 40; }
+        if (cam_x < 0) { cam_x = 0; } if (cam_x > world_w - 240) { cam_x = world_w - 240; }
+        if (cam_y < 0) { cam_y = 0; } if (cam_y > world_h - vp_height) { cam_y = world_h - vp_height; }
     }
     
     if (cam_x != last_cam_x || cam_y != last_cam_y) {
@@ -358,6 +357,13 @@ static void Mode3_RenderArena(void) {
         SafeDrawLine(tx-7, ty-7, tx-7, ty+7, BLACK);
         SafeDrawLine(tx+7, ty-7, tx+7, ty+7, BLACK);
         
+        // Draw HP inside the tank (Centered 8x16 char is too big, but we center it as much as possible)
+        if (tanks[i].hp > 0) {
+            char hp_char = (tanks[i].hp >= 10) ? 'X' : (tanks[i].hp + '0'); // 'X' for 10
+            LCD_SetColors(BLACK, tank_colors[i]);
+            LCD_DrawChar(tx - 3, ty - 8, hp_char);
+        }
+        
         float rad = tanks[i].angle * 3.14159f / 180.0f;
         SafeDrawLine(tx, ty, tx + (int16_t)(18 * cos(rad)), ty + (int16_t)(18 * sin(rad)), BLACK);
         
@@ -366,7 +372,7 @@ static void Mode3_RenderArena(void) {
 }
 
 void LCD_DrawMode3SetupSize(void) {
-    LCD_Clear(0, 0, 240, 320, UI_BG); LCD_DrawStatusBar();
+    LCD_Clear(0, 0, 240, 320, UI_BG); LCD_DrawStatusBar(); LCD_DrawBackButton();
     LCD_SetColors(BLACK, UI_BG); LCD_TEXT(60, 30, "ARENA SETUP (1/3)");
     LCD_UpdateMode3SetupSize();
 }
@@ -386,16 +392,20 @@ void LCD_UpdateMode3SetupSize(void) {
 }
 
 void LCD_DrawMode3SetupObstacles(void) {
-    LCD_Clear(0, 0, 240, 320, UI_BG); LCD_DrawStatusBar();
+    LCD_Clear(0, 0, 240, 320, UI_BG); LCD_DrawStatusBar(); LCD_DrawBackButton();
     LCD_SetColors(BLACK, UI_BG); LCD_TEXT(60, 30, "ARENA SETUP (2/3)");
     LCD_UpdateMode3SetupObstacles();
 }
 
 void LCD_UpdateMode3SetupObstacles(void) {
     uint8_t bits = 0;
-    if (m3_use_walls) bits |= 0x01; if (m3_use_rivers) bits |= 0x02; if (m3_use_supplements) bits |= 0x04;
-    if (m3_use_speedboosts) bits |= 0x08; if (m3_use_traps) bits |= 0x10; if (m3_use_wings) bits |= 0x20;
-    if (m3_use_shields) bits |= 0x40;
+    if (m3_use_walls) { bits |= 0x01; }
+    if (m3_use_rivers) { bits |= 0x02; }
+    if (m3_use_supplements) { bits |= 0x04; }
+    if (m3_use_speedboosts) { bits |= 0x08; }
+    if (m3_use_traps) { bits |= 0x10; }
+    if (m3_use_wings) { bits |= 0x20; }
+    if (m3_use_shields) { bits |= 0x40; }
     SEG_ShowCustom(0, bits);
     const char* names[] = {"WALLS", "RIVERS", "SUPPLEMENT", "SPEED", "TRAP", "WINGS", "SHIELD"};
     uint8_t* vals[] = {&m3_use_walls, &m3_use_rivers, &m3_use_supplements, &m3_use_speedboosts, &m3_use_traps, &m3_use_wings, &m3_use_shields};
@@ -428,7 +438,7 @@ void LCD_UpdateMode3SetupObstacles(void) {
 }
 
 void LCD_DrawMode3SetupBots(void) {
-    LCD_Clear(0, 0, 240, 320, UI_BG); LCD_DrawStatusBar();
+    LCD_Clear(0, 0, 240, 320, UI_BG); LCD_DrawStatusBar(); LCD_DrawBackButton();
     LCD_SetColors(BLACK, UI_BG); LCD_TEXT(60, 30, "ARENA SETUP (3/3)");
     LCD_UpdateMode3SetupBots();
 }
@@ -476,6 +486,16 @@ void Mode3_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
                uint8_t fire_pressed, uint8_t ts_pressed, uint8_t ts_click, uint16_t ts_x, uint16_t ts_y,
                uint8_t joy_up, uint8_t joy_down, uint8_t joy_left, uint8_t joy_right) {
     uint32_t now = HAL_GetTick();
+
+    // Global back button for setup phases
+    if (ts_click && ts_x < 60 && ts_y < 50) {
+        if (m3_state == M3_STATE_SETUP_SIZE || m3_state == M3_STATE_SETUP_OBSTACLES || m3_state == M3_STATE_SETUP_BOTS) {
+            app_state = APP_MODE_SELECT;
+            Buzzer_BeepShort();
+            return;
+        }
+    }
+
     if (m3_state == M3_STATE_SETUP_SIZE) {
         if (joy_left || joy_right) { m3_arena_size = (mode3_size_t)((m3_arena_size + (joy_right ? 1 : 2)) % 3); LCD_UpdateMode3SetupSize(); Buzzer_BeepShort(); }
         if (k2_click || joy_down) { m3_state = M3_STATE_SETUP_OBSTACLES; LCD_DrawMode3SetupObstacles(); Buzzer_BeepShort(); }
@@ -570,8 +590,19 @@ void Mode3_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
             }
 
             if (tanks[i].is_human) {
-                tanks[i].moving_fwd = (joy_y < Y_FWD_THRESH_ADC) ? 1 : 0;
-                if (joy_x < X_LEFT_THRESH_ADC) { tanks[i].angle -= 6.0f; } if (joy_x > X_RIGHT_THRESH_ADC) { tanks[i].angle += 6.0f; }
+                // Enhanced deadzone check to prevent drift
+                if (joy_y < Y_FWD_THRESH_ADC - 150) { 
+                    tanks[i].moving_fwd = 1;
+                } else {
+                    tanks[i].moving_fwd = 0;
+                }
+                
+                if (joy_x < X_LEFT_THRESH_ADC - 150) { 
+                    tanks[i].angle -= 6.0f; 
+                } else if (joy_x > X_RIGHT_THRESH_ADC + 150) { 
+                    tanks[i].angle += 6.0f; 
+                }
+                
                 if (fire_pressed && !tanks[i].ball_active) {
                     tanks[i].ball_x = tanks[i].x; tanks[i].ball_y = tanks[i].y;
                     tanks[i].ball_vx = 12.0f * cos(tanks[i].angle * 3.14159f / 180.0f);
@@ -644,6 +675,26 @@ void Mode3_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
                 }
                 if (can) { tanks[i].x = nx; tanks[i].y = ny; }
             }
+            
+            // Proximity bounce-back collision with other tanks
+            for(int k=0; k<4; k++) {
+                if (k == i || !tanks[k].active || tanks[k].hp <= 0) continue;
+                float dist = sqrt((tanks[i].x - tanks[k].x) * (tanks[i].x - tanks[k].x) + 
+                                  (tanks[i].y - tanks[k].y) * (tanks[i].y - tanks[k].y));
+                if (dist < 12.0f && dist > 0.1f) {
+                    // Bounce back and lose 1 HP each
+                    float dx = (tanks[i].x - tanks[k].x) / dist;
+                    float dy = (tanks[i].y - tanks[k].y) / dist;
+                    tanks[i].x += dx * 3.0f;
+                    tanks[i].y += dy * 3.0f;
+                    tanks[k].x -= dx * 3.0f;
+                    tanks[k].y -= dy * 3.0f;
+                    if (tanks[i].shield_timer <= now) tanks[i].hp--;
+                    if (tanks[k].shield_timer <= now) tanks[k].hp--;
+                    if (k == 0 || i == 0) LCD_DrawMode3HUD();
+                    Buzzer_BeepShort();
+                }
+            }
 
             if (tanks[i].ball_active) {
                 if (now - tanks[i].ball_spawn_tick > 5000) tanks[i].ball_active = 0;
@@ -651,11 +702,16 @@ void Mode3_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
                     float nx = tanks[i].ball_x + tanks[i].ball_vx, ny = tanks[i].ball_y + tanks[i].ball_vy; 
                     int ngr = (int)ny / TILE_SIZE, ngc = (int)nx / TILE_SIZE;
                     
-                    // Collision with tanks
+                    // Collision with tanks (with minimum distance check to prevent penetration)
                     if (now - tanks[i].ball_spawn_tick > 200) {
                         for(int k=0; k<4; k++) {
                             if(!tanks[k].active || tanks[k].hp <= 0) continue;
-                            if (abs(nx - tanks[k].x) < 8 && abs(ny - tanks[k].y) < 8) { 
+                            float shot_dist = sqrt((nx - tanks[k].x) * (nx - tanks[k].x) + 
+                                                   (ny - tanks[k].y) * (ny - tanks[k].y));
+                            // Only damage if shot is at least 10 pixels away from firer
+                            float firer_dist = sqrt((tanks[i].x - tanks[k].x) * (tanks[i].x - tanks[k].x) + 
+                                                    (tanks[i].y - tanks[k].y) * (tanks[i].y - tanks[k].y));
+                            if (shot_dist < 8 && firer_dist >= 10.0f) { 
                                 if (tanks[k].shield_timer <= now) tanks[k].hp--; 
                                 tanks[i].ball_active = 0; 
                                 if(k==0) LCD_DrawMode3HUD(); 

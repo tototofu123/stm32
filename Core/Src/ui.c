@@ -14,6 +14,26 @@ uint32_t    lcd_fast_tick = 0;
 uint32_t    lcd_slow_tick = 0;
 uint8_t     touch_display_flag = 0U;
 
+// Global Settings Definitions
+ui_theme_t current_theme = THEME_DEFAULT;
+uint8_t    audio_enabled = 1;
+uint8_t    colorblind_mode = 0;
+uint8_t    led_enabled = 1;
+uint8_t    seg_enabled = 1;
+ui_font_t  current_font = FONT_DEFAULT;
+
+// Temporary Settings for UI
+ui_theme_t temp_theme = THEME_DEFAULT;
+uint8_t    temp_audio = 1;
+uint8_t    temp_cb = 0;
+uint8_t    temp_led = 1;
+uint8_t    temp_seg = 1;
+ui_font_t  temp_font = FONT_DEFAULT;
+uint8_t    settings_focus_idx = 0;
+int8_t     home_focus_idx = 0;
+int8_t     mode_focus_idx = 0;
+int8_t     car_focus_idx = 0;
+
 // WiFi List Variables
 char wifi_ssids[MAX_WIFI_NETWORKS][33];
 uint8_t wifi_count = 0;
@@ -25,7 +45,7 @@ uint8_t kb_shift = 0;
 
 void LCD_ClearTextField(uint16_t x, uint16_t y, uint16_t chars, uint16_t bg)
 {
-    LCD_Clear(x, y, chars * 8, 16, bg); 
+    LCD_Clear(x, y, chars * 10, 20, bg); 
 }
 
 void LCD_DrawStatusBar(void)
@@ -43,27 +63,38 @@ void LCD_DrawStatusBar(void)
     LCD_SetColors(BLUE, WHITE);
 }
 
+void LCD_DrawBackButton(void)
+{
+    LCD_Clear(5, 25, 45, 22, RED);
+    LCD_SetColors(WHITE, RED);
+    LCD_TEXT(10, 28, "BACK");
+    LCD_SetColors(BLUE, WHITE);
+}
+
 void LCD_DrawHome(void)
 {
     LCD_Clear(0, 0, 240, 320, UI_BG);
     LCD_DrawStatusBar();
     
     LCD_SetColors(BLACK, UI_BG);
-    LCD_TEXT(55, 60, "MASTER CONTROL");
+    LCD_TEXT(55, 60, "TANK COMMANDER");
     
-    LCD_Clear(20, 100, 200, 60, BLUE);
-    LCD_Clear(22, 102, 196, 56, WHITE);
-    LCD_SetColors(BLUE, WHITE);
-    LCD_TEXT(80, 122, ">> BATTLE <<");
+    // Modernized buttons with Focus Support
+    uint16_t b1_color = (home_focus_idx == 0) ? UI_BOX_SEL : BLUE;
+    LCD_Clear(20, 100, 200, 60, b1_color);
+    LCD_DrawRectangle(20, 100, 200, 60, BLACK);
+    LCD_SetColors((home_focus_idx == 0) ? BLACK : WHITE, b1_color);
+    LCD_TEXT(80, 122, "START BATTLE");
     
-    LCD_Clear(20, 180, 200, 60, MY_GRAY);
-    LCD_Clear(22, 182, 196, 56, WHITE);
-    LCD_SetColors(MY_GRAY, WHITE);
-    LCD_TEXT(75, 202, ">> SETTINGS <<");
+    uint16_t b2_color = (home_focus_idx == 1) ? UI_BOX_SEL : DARK_GRAY;
+    LCD_Clear(20, 180, 200, 60, b2_color);
+    LCD_DrawRectangle(20, 180, 200, 60, BLACK);
+    LCD_SetColors((home_focus_idx == 1) ? BLACK : WHITE, b2_color);
+    LCD_TEXT(75, 202, "PREFERENCES");
     
-    LCD_Clear(0, 280, 240, 40, UI_BOTTOM);
-    LCD_SetColors(WHITE, UI_BOTTOM);
-    LCD_TEXT(40, 292, "TOUCH SCREEN TO START");
+    LCD_Clear(0, 280, 240, 40, DARK_GRAY);
+    LCD_SetColors(WHITE, DARK_GRAY);
+    LCD_TEXT(30, 292, "READY FOR ENGAGEMENT");
     LCD_SetColors(BLUE, WHITE);
 }
 
@@ -71,15 +102,108 @@ void LCD_DrawSettings(void)
 {
     LCD_Clear(0, 0, 240, 320, UI_BG);
     LCD_DrawStatusBar();
+    LCD_DrawBackButton();
     
     LCD_SetColors(BLACK, UI_BG);
-    LCD_TEXT(10, 30, "NETWORK SETTINGS");
+    LCD_TEXT(80, 25, "SETTINGS");
+    
+    for (uint8_t i = 0; i < 7; i++) {
+        LCD_UpdateSettingsOption(i);
+    }
+    
+    // Confirm / Back Area
+    LCD_Clear(0, 280, 110, 40, RED);
+    LCD_DrawRectangle(0, 280, 110, 40, BLACK);
+    LCD_SetColors(WHITE, RED);
+    LCD_TEXT(10, 292, "TAP: CANCEL");
+    
+    LCD_Clear(130, 280, 110, 40, MY_GREEN);
+    LCD_DrawRectangle(130, 280, 110, 40, BLACK);
+    LCD_SetColors(BLACK, MY_GREEN);
+    LCD_TEXT(140, 292, "TAP: CONFIRM");
+    
+    LCD_SetColors(BLUE, WHITE);
+}
+
+void LCD_UpdateSettingsOption(uint8_t option_idx)
+{
+    uint16_t y = 45 + (option_idx * 33);
+    uint16_t box_color = (settings_focus_idx == option_idx) ? UI_BOX_SEL : UI_BOX_NSEL;
+    
+    if (option_idx < 6) {
+        LCD_Clear(20, y - 4, 200, 28, box_color);
+        LCD_DrawRectangle(20, y - 4, 200, 28, BLACK);
+        LCD_SetColors(BLACK, box_color);
+        
+        if (settings_focus_idx == option_idx) {
+            LCD_TEXT(25, y, "->");
+        } else {
+            LCD_Clear(25, y, 15, 16, box_color);
+        }
+    }
+
+    switch (option_idx) {
+        case 0: // Theme
+            {
+                const char* themes[] = {"THEME: DEFAULT", "THEME: DARK", "THEME: LIGHT"};
+                LCD_TEXT(45, y, themes[temp_theme]);
+            }
+            break;
+        case 1: // Audio
+            {
+                char aud_buf[32]; snprintf(aud_buf, sizeof(aud_buf), "BUZZER: %s", temp_audio ? "ON" : "OFF");
+                LCD_TEXT(45, y, aud_buf);
+            }
+            break;
+        case 2: // Colorblind
+            {
+                char cb_buf[32]; snprintf(cb_buf, sizeof(cb_buf), "CONTRAST: %s", temp_cb ? "HIGH" : "NORMAL");
+                LCD_TEXT(45, y, cb_buf);
+            }
+            break;
+        case 3: // LED
+            {
+                char led_buf[32]; snprintf(led_buf, sizeof(led_buf), "RGB LED: %s", temp_led ? "ON" : "OFF");
+                LCD_TEXT(45, y, led_buf);
+            }
+            break;
+        case 4: // 7-SEG
+            {
+                char seg_buf[32]; snprintf(seg_buf, sizeof(seg_buf), "7-SEG: %s", temp_seg ? "ON" : "OFF");
+                LCD_TEXT(45, y, seg_buf);
+            }
+            break;
+        case 5: // Font
+            {
+                char font_buf[32]; snprintf(font_buf, sizeof(font_buf), "FONT: %s", temp_font == FONT_LARGE ? "LARGE" : "DEFAULT");
+                LCD_TEXT(45, y, font_buf);
+            }
+            break;
+        case 6: // WiFi
+            {
+                LCD_Clear(20, y - 4, 200, 28, (settings_focus_idx == 6) ? BLUE : DARK_GRAY);
+                LCD_DrawRectangle(20, y - 4, 200, 28, BLACK);
+                LCD_SetColors(WHITE, (settings_focus_idx == 6) ? BLUE : DARK_GRAY);
+                LCD_TEXT(55, y, "WIFI CONFIG >");
+            }
+            break;
+    }
+}
+
+void LCD_DrawWiFiSettings(void)
+{
+    LCD_Clear(0, 0, 240, 320, UI_BG);
+    LCD_DrawStatusBar();
+    LCD_DrawBackButton();
+    
+    LCD_SetColors(BLACK, UI_BG);
+    LCD_TEXT(60, 30, "WIFI CONFIG");
     
     LCD_DrawWiFiList();
     
-    LCD_Clear(0, 280, 240, 40, UI_BOTTOM);
-    LCD_SetColors(WHITE, UI_BOTTOM);
-    LCD_TEXT(10, 292, "K1:BACK   K2:SCAN");
+    LCD_Clear(0, 280, 240, 40, DARK_GRAY);
+    LCD_SetColors(WHITE, DARK_GRAY);
+    LCD_TEXT(10, 292, "K1:BACK   K2:RE-SCAN");
     LCD_SetColors(BLUE, WHITE);
 }
 
@@ -97,7 +221,7 @@ void LCD_DrawWiFiList(void)
             uint16_t y = 65 + (i * 22);
             if (i == selected_wifi_idx) {
                 LCD_Clear(12, y-2, 216, 20, UI_BOX_SEL);
-                LCD_SetColors(WHITE, UI_BOX_SEL);
+                LCD_SetColors(BLACK, UI_BOX_SEL);
             } else {
                 LCD_SetColors(BLACK, WHITE);
             }
@@ -133,6 +257,7 @@ void LCD_DrawKeyboard(const char* current_input)
             uint16_t y = 90 + (r * 32);
             
             LCD_Clear(x, y, 35, 28, UI_BOX_NSEL);
+            LCD_DrawRectangle(x, y, 35, 28, BLACK);
             LCD_SetColors(BLACK, UI_BOX_NSEL);
             char key_str[2] = {keys[idx], '\0'};
             LCD_TEXT(x + 12, y + 6, key_str);
@@ -141,12 +266,18 @@ void LCD_DrawKeyboard(const char* current_input)
     
     // Special Keys
     LCD_Clear(10, 282, 70, 35, kb_shift ? UI_BOX_SEL : UI_BOX_NSEL);
+    LCD_DrawRectangle(10, 282, 70, 35, BLACK);
+    LCD_SetColors(BLACK, kb_shift ? UI_BOX_SEL : UI_BOX_NSEL);
     LCD_TEXT(20, 292, "SHIFT");
     
     LCD_Clear(85, 282, 70, 35, RED);
+    LCD_DrawRectangle(85, 282, 70, 35, BLACK);
+    LCD_SetColors(WHITE, RED);
     LCD_TEXT(95, 292, "BACK");
     
     LCD_Clear(160, 282, 70, 35, GREEN);
+    LCD_DrawRectangle(160, 282, 70, 35, BLACK);
+    LCD_SetColors(BLACK, GREEN);
     LCD_TEXT(170, 292, "ENTER");
     
     LCD_SetColors(BLUE, WHITE);
@@ -181,48 +312,74 @@ void LCD_DrawModeSelect(void)
 {
     LCD_Clear(0, 0, 240, 320, UI_BG);
     LCD_DrawStatusBar();
-    LCD_TEXT(10, 32, "K1:NEXT   K2:CONFIRM");
+    LCD_DrawBackButton();
+    LCD_SetColors(BLACK, UI_BG);
+    LCD_TEXT(60, 32, "CHOOSE OPERATION");
 
-    LCD_Clear(20, 70, 200, 40, (selected_mode == GAME_MODE_1) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(80, 82, "MODE 1");
-    LCD_Clear(20, 125, 200, 40, (selected_mode == GAME_MODE_2) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(80, 137, "MODE 2");
-    LCD_Clear(20, 180, 200, 40, (selected_mode == GAME_MODE_3) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(80, 192, "MODE 3");
+    LCD_Clear(20, 70, 200, 40, (mode_focus_idx == 0) ? UI_BOX_SEL : UI_BOX_NSEL);
+    LCD_DrawRectangle(20, 70, 200, 40, BLACK);
+    LCD_SetColors(BLACK, (mode_focus_idx == 0) ? UI_BOX_SEL : UI_BOX_NSEL);
+    LCD_TEXT(60, 82, "MODE 1: BATTLE");
+    
+    LCD_Clear(20, 125, 200, 40, (mode_focus_idx == 1) ? UI_BOX_SEL : UI_BOX_NSEL);
+    LCD_DrawRectangle(20, 125, 200, 40, BLACK);
+    LCD_SetColors(BLACK, (mode_focus_idx == 1) ? UI_BOX_SEL : UI_BOX_NSEL);
+    LCD_TEXT(60, 137, "MODE 2: DRAW");
+    
+    LCD_Clear(20, 180, 200, 40, (mode_focus_idx == 2) ? UI_BOX_SEL : UI_BOX_NSEL);
+    LCD_DrawRectangle(20, 180, 200, 40, BLACK);
+    LCD_SetColors(BLACK, (mode_focus_idx == 2) ? UI_BOX_SEL : UI_BOX_NSEL);
+    LCD_TEXT(60, 192, "MODE 3: MAP");
 
-    LCD_Clear(0, 250, 240, 70, UI_BOTTOM);
-    LCD_TEXT(10, 260, "MODE 1 = PLAY NOW");
-    LCD_TEXT(10, 280, "MODE 2 = DRAW FIGHT");
+    LCD_Clear(0, 250, 240, 70, DARK_GRAY);
+    LCD_SetColors(WHITE, DARK_GRAY);
+    LCD_TEXT(10, 260, "M1 = REAL-TIME CONTROL");
+    LCD_TEXT(10, 280, "M2 = AUTONOMOUS PATH");
+    LCD_TEXT(10, 300, "M3 = LOCAL BATTLE");
 }
 
 void LCD_UpdateModeSelection(void)
 {
-    LCD_Clear(20, 70, 200, 40, (selected_mode == GAME_MODE_1) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(80, 82, "MODE 1");
-    LCD_Clear(20, 125, 200, 40, (selected_mode == GAME_MODE_2) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(80, 137, "MODE 2");
-    LCD_Clear(20, 180, 200, 40, (selected_mode == GAME_MODE_3) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(80, 192, "MODE 3");
+    LCD_Clear(20, 70, 200, 40, (mode_focus_idx == 0) ? UI_BOX_SEL : UI_BOX_NSEL);
+    LCD_DrawRectangle(20, 70, 200, 40, BLACK);
+    LCD_SetColors(BLACK, (mode_focus_idx == 0) ? UI_BOX_SEL : UI_BOX_NSEL);
+    LCD_TEXT(60, 82, "MODE 1: BATTLE");
+
+    LCD_Clear(20, 125, 200, 40, (mode_focus_idx == 1) ? UI_BOX_SEL : UI_BOX_NSEL);
+    LCD_DrawRectangle(20, 125, 200, 40, BLACK);
+    LCD_SetColors(BLACK, (mode_focus_idx == 1) ? UI_BOX_SEL : UI_BOX_NSEL);
+    LCD_TEXT(60, 137, "MODE 2: DRAW");
+
+    LCD_Clear(20, 180, 200, 40, (mode_focus_idx == 2) ? UI_BOX_SEL : UI_BOX_NSEL);
+    LCD_DrawRectangle(20, 180, 200, 40, BLACK);
+    LCD_SetColors(BLACK, (mode_focus_idx == 2) ? UI_BOX_SEL : UI_BOX_NSEL);
+    LCD_TEXT(60, 192, "MODE 3: MAP");
 }
 
 void LCD_DrawModeConfirm(void)
 {
-    LCD_Clear(18, 78, 204, 164, MY_BLACK);  
-    LCD_Clear(20, 80, 200, 160, WHITE);     
+    LCD_Clear(5, 75, 230, 175, MY_BLACK);  
+    LCD_Clear(8, 78, 224, 169, WHITE);     
+    LCD_DrawRectangle(8, 78, 224, 169, BLACK);
     
-    LCD_TEXT(30, 95, "You choosed:");
-    LCD_TEXT(30, 115, (char *)MODE_Name(selected_mode));
-    LCD_TEXT(30, 135, "Are you sure?");
-    LCD_TEXT(30, 155, "Once confirmed");
-    LCD_TEXT(30, 175, "cannot change!");
+    LCD_SetColors(BLACK, WHITE);
+    LCD_TEXT(20, 90, "You choosed:");
+    LCD_SetColors(BLUE, WHITE);
+    LCD_TEXT(20, 110, (char *)MODE_Name(selected_mode));
+    LCD_SetColors(BLACK, WHITE);
+    LCD_TEXT(20, 130, "Are you sure?");
+    LCD_TEXT(20, 150, "Once confirmed");
+    LCD_TEXT(20, 170, "cannot change!");
 
-    LCD_Clear(30, 195, 80, 35, MY_GRAY);
-    LCD_TEXT(42, 200, "REGRET");
-    LCD_TEXT(50, 215, "(K1)");
+    LCD_Clear(10, 190, 105, 45, DARK_GRAY);
+    LCD_DrawRectangle(10, 190, 105, 45, BLACK);
+    LCD_SetColors(WHITE, DARK_GRAY);
+    LCD_TEXT(25, 205, "REGRET");
     
-    LCD_Clear(130, 195, 80, 35, MY_GREEN);
-    LCD_TEXT(138, 200, "CONFIRM");
-    LCD_TEXT(150, 215, "(K2)");
+    LCD_Clear(125, 190, 105, 45, MY_GREEN);
+    LCD_DrawRectangle(125, 190, 105, 45, BLACK);
+    LCD_SetColors(BLACK, MY_GREEN);
+    LCD_TEXT(135, 205, "CONFIRM");
 }
 
 void LCD_DrawCarSelect(void)
@@ -230,27 +387,25 @@ void LCD_DrawCarSelect(void)
     char line[32];
     LCD_Clear(0, 0, 240, 320, UI_BG);
     LCD_DrawStatusBar();
-    LCD_TEXT(10, 28, "K1:NEXT K2:START");
+    LCD_DrawBackButton();
+    LCD_SetColors(BLACK, UI_BG);
+    LCD_TEXT(60, 28, "SELECT CHASSIS");
 
-    snprintf(line, sizeof(line), "MODE:%s", MODE_Name(selected_mode));
+    snprintf(line, sizeof(line), "OP: %s", MODE_Name(selected_mode));
     LCD_TEXT(10, 46, line);
 
-    LCD_Clear(14,  64, 212, 20, (selected_car == CAR_V0) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(20, 68, "V0 STANDARD");
-    LCD_Clear(14,  88, 212, 20, (selected_car == CAR_V1) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(20, 92, "V1 AUTO FIRE");
-    LCD_Clear(14, 112, 212, 20, (selected_car == CAR_V2) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(20, 116, "V2 RAPID SHOT");
-    LCD_Clear(14, 136, 212, 20, (selected_car == CAR_V3) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(20, 140, "V3 MOVING CAST");
-    LCD_Clear(14, 160, 212, 20, (selected_car == CAR_V4) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(20, 164, "V4 FORWARD SPD");
-    LCD_Clear(14, 184, 212, 20, (selected_car == CAR_V5) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(20, 188, "V5 LONG BEAM");
-    LCD_Clear(14, 208, 212, 20, (selected_car == CAR_V6) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(20, 212, "V6 GUN PLATFORM");
+    for (int i = 0; i < 7; i++) {
+        uint16_t y = 64 + (i * 26);
+        uint16_t color = (car_focus_idx == i) ? UI_BOX_SEL : UI_BOX_NSEL;
+        LCD_Clear(14, y, 212, 24, color);
+        LCD_DrawRectangle(14, y, 212, 24, BLACK);
+        LCD_SetColors(BLACK, color);
+        const char* labels[] = {"V0 STANDARD", "V1 AUTO FIRE", "V2 RAPID SHOT", "V3 MOVING CAST", "V4 FORWARD SPD", "V5 LONG BEAM", "V6 GUN PLATFORM"};
+        LCD_TEXT(20, y+2, labels[i]);
+    }
 
     LCD_Clear(0, 246, 240, 74, UI_BOTTOM);
+    LCD_SetColors(WHITE, UI_BOTTOM);
     LCD_TEXT(10, 256, "CAR:");
     LCD_TEXT(60, 256, (char *)CAR_Code(selected_car));
     LCD_TEXT(10, 278, "TYPE:");
@@ -259,21 +414,17 @@ void LCD_DrawCarSelect(void)
 
 void LCD_UpdateCarSelection(void)
 {
-    LCD_Clear(14,  64, 212, 20, (selected_car == CAR_V0) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(20, 68, "V0 STANDARD");
-    LCD_Clear(14,  88, 212, 20, (selected_car == CAR_V1) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(20, 92, "V1 AUTO FIRE");
-    LCD_Clear(14, 112, 212, 20, (selected_car == CAR_V2) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(20, 116, "V2 RAPID SHOT");
-    LCD_Clear(14, 136, 212, 20, (selected_car == CAR_V3) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(20, 140, "V3 MOVING CAST");
-    LCD_Clear(14, 160, 212, 20, (selected_car == CAR_V4) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(20, 164, "V4 FORWARD SPD");
-    LCD_Clear(14, 184, 212, 20, (selected_car == CAR_V5) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(20, 188, "V5 LONG BEAM");
-    LCD_Clear(14, 208, 212, 20, (selected_car == CAR_V6) ? UI_BOX_SEL : UI_BOX_NSEL);
-    LCD_TEXT(20, 212, "V6 GUN PLATFORM");
+    for (int i = 0; i < 7; i++) {
+        uint16_t y = 64 + (i * 26);
+        uint16_t color = (car_focus_idx == i) ? UI_BOX_SEL : UI_BOX_NSEL;
+        LCD_Clear(14, y, 212, 24, color);
+        LCD_DrawRectangle(14, y, 212, 24, BLACK);
+        LCD_SetColors(BLACK, color);
+        const char* labels[] = {"V0 STANDARD", "V1 AUTO FIRE", "V2 RAPID SHOT", "V3 MOVING CAST", "V4 FORWARD SPD", "V5 LONG BEAM", "V6 GUN PLATFORM"};
+        LCD_TEXT(20, y+2, labels[i]);
+    }
 
+    LCD_SetColors(WHITE, UI_BOTTOM);
     LCD_ClearTextField(60, 256, 8, UI_BOTTOM);
     LCD_TEXT(60, 256, (char *)CAR_Code(selected_car));
     LCD_ClearTextField(60, 278, 20, UI_BOTTOM);
@@ -282,22 +433,28 @@ void LCD_UpdateCarSelection(void)
 
 void LCD_DrawCarConfirm(void)
 {
-    LCD_Clear(18, 78, 204, 164, MY_BLACK);  
-    LCD_Clear(20, 80, 200, 160, WHITE);     
+    LCD_Clear(5, 75, 230, 175, MY_BLACK);  
+    LCD_Clear(8, 78, 224, 169, WHITE);     
+    LCD_DrawRectangle(8, 78, 224, 169, BLACK);
     
-    LCD_TEXT(30, 95, "You choosed:");
-    LCD_TEXT(30, 115, (char *)CAR_Label(selected_car));
-    LCD_TEXT(30, 135, "Are you sure?");
-    LCD_TEXT(30, 155, "Once confirmed");
-    LCD_TEXT(30, 175, "cannot change!");
+    LCD_SetColors(BLACK, WHITE);
+    LCD_TEXT(20, 90, "You choosed:");
+    LCD_SetColors(BLUE, WHITE);
+    LCD_TEXT(20, 110, (char *)CAR_Label(selected_car));
+    LCD_SetColors(BLACK, WHITE);
+    LCD_TEXT(20, 130, "Are you sure?");
+    LCD_TEXT(20, 150, "Once confirmed");
+    LCD_TEXT(20, 170, "cannot change!");
 
-    LCD_Clear(30, 195, 80, 35, MY_GRAY);
-    LCD_TEXT(42, 200, "REGRET");
-    LCD_TEXT(50, 215, "(K1)");
+    LCD_Clear(10, 190, 105, 45, DARK_GRAY);
+    LCD_DrawRectangle(10, 190, 105, 45, BLACK);
+    LCD_SetColors(WHITE, DARK_GRAY);
+    LCD_TEXT(25, 205, "REGRET");
     
-    LCD_Clear(130, 195, 80, 35, MY_GREEN);
-    LCD_TEXT(138, 200, "CONFIRM");
-    LCD_TEXT(150, 215, "(K2)");
+    LCD_Clear(125, 190, 105, 45, MY_GREEN);
+    LCD_DrawRectangle(125, 190, 105, 45, BLACK);
+    LCD_SetColors(BLACK, MY_GREEN);
+    LCD_TEXT(135, 205, "CONFIRM");
 }
 
 void LCD_DrawGameLayout(void)
@@ -305,6 +462,7 @@ void LCD_DrawGameLayout(void)
     LCD_Clear(0, 0, 240, 320, UI_BG);
     LCD_DrawStatusBar();
 
+    LCD_SetColors(BLACK, UI_BG);
     LCD_TEXT(10, 50,  "Mode:");
     LCD_TEXT(10, 70,  "Direction:");
     LCD_TEXT(10, 90,  "Speed:");
@@ -315,6 +473,7 @@ void LCD_DrawGameLayout(void)
     LCD_TEXT(10, 190, "Touch:");
 
     LCD_Clear(0, 215, 240, 105, UI_BOTTOM);
+    LCD_SetColors(WHITE, UI_BOTTOM);
     LCD_TEXT(10, 225, "Car:");
     LCD_TEXT(10, 245, "Car Type:");
 }
@@ -322,7 +481,8 @@ void LCD_DrawGameLayout(void)
 void LCD_DrawMode2InputSelect(void) {
     LCD_Clear(0, 0, 240, 320, UI_BG);
     LCD_DrawStatusBar();
-    LCD_TEXT(40, 30, "SELECT CONTROL");
+    LCD_DrawBackButton();
+    LCD_TEXT(60, 30, "SELECT CONTROL");
     
     if (selected_input == M2_INPUT_JOYSTICK) {
         LCD_Clear(10, 70, 220, 80, BLUE);
@@ -469,14 +629,14 @@ void LCD_UpdateGameFast(uint32_t x_raw, uint32_t y_raw)
         snprintf(spd_str, sizeof(spd_str), "%3u%%", speed);
     }
 
-    LCD_ClearTextField(50, 50, 12, UI_BG);
-    LCD_TEXT(50, 50, (char *)MODE_Name(selected_mode));
+    LCD_ClearTextField(110, 50, 12, UI_BG);
+    LCD_TEXT(110, 50, (char *)MODE_Name(selected_mode));
 
-    LCD_ClearTextField(90, 70, 14, UI_BG);
-    LCD_TEXT(90, 70, dir_str);
+    LCD_ClearTextField(110, 70, 14, UI_BG);
+    LCD_TEXT(110, 70, dir_str);
 
-    LCD_ClearTextField(70, 90, 10, UI_BG);
-    LCD_TEXT(70, 90, spd_str);
+    LCD_ClearTextField(110, 90, 10, UI_BG);
+    LCD_TEXT(110, 90, spd_str);
 }
 
 void LCD_UpdateGameSlow(uint8_t fire_pressed)
@@ -499,24 +659,24 @@ void LCD_UpdateGameSlow(uint8_t fire_pressed)
     snprintf(motion_disp, sizeof(motion_disp), "%s", motion_line);
     snprintf(esp_disp, sizeof(esp_disp), "%s", esp_cmd_rx);
 
-    LCD_ClearTextField(70, 110, 12, UI_BG);
-    LCD_TEXT(70, 110, btn_str);
+    LCD_ClearTextField(110, 110, 12, UI_BG);
+    LCD_TEXT(110, 110, btn_str);
 
-    LCD_ClearTextField(60, 130, 20, UI_BG);
-    LCD_TEXT(60, 130, laser_disp);
+    LCD_ClearTextField(110, 130, 12, UI_BG);
+    LCD_TEXT(110, 130, laser_disp);
 
-    LCD_ClearTextField(70, 150, 20, UI_BG);
-    LCD_TEXT(70, 150, motion_disp);
+    LCD_ClearTextField(110, 150, 12, UI_BG);
+    LCD_TEXT(110, 150, motion_disp);
 
-    LCD_ClearTextField(50, 170, 8, UI_BG);
-    LCD_TEXT(50, 170, esp_disp);
+    LCD_ClearTextField(110, 170, 12, UI_BG);
+    LCD_TEXT(110, 170, esp_disp);
 
-    LCD_ClearTextField(70, 190, 16, UI_BG);
-    LCD_TEXT(70, 190, touch_str);
+    LCD_ClearTextField(110, 190, 12, UI_BG);
+    LCD_TEXT(110, 190, touch_str);
 
-    LCD_ClearTextField(50, 225, 8, UI_BOTTOM);
-    LCD_TEXT(50, 225, (char *)CAR_Code(selected_car));
+    LCD_ClearTextField(110, 225, 12, UI_BOTTOM);
+    LCD_TEXT(110, 225, (char *)CAR_Code(selected_car));
 
-    LCD_ClearTextField(80, 245, 20, UI_BOTTOM);
-    LCD_TEXT(80, 245, (char *)CAR_Label(selected_car));
+    LCD_ClearTextField(110, 245, 12, UI_BOTTOM);
+    LCD_TEXT(110, 245, (char *)CAR_Label(selected_car));
 }

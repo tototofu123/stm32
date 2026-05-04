@@ -2,6 +2,30 @@
 #define UI_H
 
 #include "main.h"
+#include <stdint.h>
+
+// Global Settings (Added for Settings Expansion)
+typedef enum { THEME_DEFAULT = 0, THEME_DARK, THEME_LIGHT } ui_theme_t;
+typedef enum { FONT_DEFAULT = 0, FONT_LARGE } ui_font_t;
+
+extern ui_theme_t current_theme;
+extern uint8_t    audio_enabled;
+extern uint8_t    colorblind_mode;
+extern uint8_t    led_enabled;
+extern uint8_t    seg_enabled;
+extern ui_font_t  current_font;
+
+extern ui_theme_t temp_theme;
+extern uint8_t    temp_audio;
+extern uint8_t    temp_cb;
+extern uint8_t    temp_led;
+extern uint8_t    temp_seg;
+extern ui_font_t  temp_font;
+extern uint8_t    settings_focus_idx;
+extern int8_t     home_focus_idx;
+extern int8_t     mode_focus_idx;
+extern int8_t     car_focus_idx;
+
 #include "game_logic.h"
 
 // LCD UI Updates
@@ -16,7 +40,8 @@
 #define UI_BOX_NSEL         YELLOW
 #define UI_BOTTOM           MAGENTA
 #define UI_PLACEHOLDER      RED
-#define MY_GRAY             0x8410
+#define DARK_GRAY           0x4208
+#define LIGHT_BLUE          0x07FF
 #define MY_BLACK            0x0000
 #define MY_GREEN            0x07E0
 
@@ -49,6 +74,9 @@ void LCD_DrawHome(void);
 void LCD_DrawSettings(void);
 void LCD_DrawWiFiList(void);
 void LCD_DrawKeyboard(const char* current_input);
+void LCD_DrawBackButton(void);
+void LCD_UpdateSettingsOption(uint8_t option_idx);
+void LCD_DrawWiFiSettings(void);
 void LCD_DrawMode3Placeholder(void);
 
 // Existing Screens

@@ -45,12 +45,11 @@ static uint32_t remaining_time_ms = 0;
 mode2_input_method_t selected_input = M2_INPUT_JOYSTICK;
 
 void Mode2_Init(void) {
-    m2_state = M2_STATE_INPUT_SELECT;
-    selected_input = M2_INPUT_JOYSTICK;
-    Buzzer_SetMute(1);  
-    LCD_Clear(0, 0, 240, 320, UI_BG);
-    LCD_DrawMode2InputSelect();
-    SEG_ShowPair(0, 1, 0); 
+m2_state = M2_STATE_INPUT_SELECT;
+selected_input = M2_INPUT_JOYSTICK;
+LCD_Clear(0, 0, 240, 320, UI_BG);
+LCD_DrawMode2InputSelect();
+SEG_ShowPair(0, 1, 0);
 }
 
 void Mode2_ResetCanvas(void) {
@@ -124,6 +123,15 @@ void Mode2_Run(uint32_t joy_x, uint32_t joy_y, uint8_t k1_click, uint8_t k2_clic
                uint8_t fire_pressed, uint8_t ts_pressed, uint8_t ts_click, uint16_t ts_x, uint16_t ts_y,
                uint8_t joy_up, uint8_t joy_down, uint8_t joy_left, uint8_t joy_right) {
     uint32_t now = HAL_GetTick();
+
+    // Global back button for setup phase
+    if (ts_click && ts_x < 60 && ts_y < 50) {
+        if (m2_state == M2_STATE_INPUT_SELECT) {
+            app_state = APP_MODE_SELECT;
+            Buzzer_BeepShort();
+            return;
+        }
+    }
 
     if (m2_state == M2_STATE_INPUT_SELECT) {
         if (k1_click || joy_up || joy_down) { selected_input = (selected_input == M2_INPUT_JOYSTICK) ? M2_INPUT_TOUCH : M2_INPUT_JOYSTICK; LCD_UpdateMode2InputSelect(); SEG_ShowPair(0, selected_input + 1, 0); Buzzer_BeepShort(); HAL_Delay(50); }

@@ -1,4 +1,5 @@
 #include "seven_seg.h"
+#include "ui.h"
 
 // Initialize state variables
 seg_mode_t seg_mode = SEG_IDLE;
@@ -10,6 +11,7 @@ uint8_t    seg_dp = 0;
 
 void SEG_WritePin(GPIO_TypeDef *port, uint16_t pin, uint8_t on)
 {
+    if (!seg_enabled) on = 0; // Force off if 7-SEG display is disabled
     HAL_GPIO_WritePin(port, pin, on ? GPIO_PIN_RESET : GPIO_PIN_SET);
 }
 

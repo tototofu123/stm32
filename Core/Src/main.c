@@ -54,12 +54,14 @@ GPIO_PinState last_cap_state = GPIO_PIN_SET;
 uint32_t last_k1_event_tick = 0U;
 uint32_t last_k2_event_tick = 0U;
 
-uint32_t x_left_thresh = 1500U;
-uint32_t x_right_thresh = 2500U;
-uint32_t y_fwd_thresh = 1500U;
-uint32_t y_back_thresh = 2500U;
-uint32_t adc_center_x = 2048U;
-uint32_t adc_center_y = 2048U;
+// UART RX byte for ESP is defined in peripherals.c
+
+uint32_t x_left_thresh = 1700U;
+uint32_t x_right_thresh = 2700U;
+uint32_t y_fwd_thresh = 1700U;
+uint32_t y_back_thresh = 2700U;
+uint32_t adc_center_x = 2200U;
+uint32_t adc_center_y = 2200U;
 
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
@@ -83,18 +85,18 @@ int main(void)
     HAL_ADCEx_Calibration_Start(&hadc1);
     HAL_ADCEx_Calibration_Start(&hadc2);
     
-    // Joystick auto-calibration
+    // Joystick auto-calibration (increased deadzone to 1000 for stability)
     uint32_t cx = read_adc1();
     uint32_t cy = read_adc2();
-    if(cx > 500 && cx < 3500) {
+    if(cx > 800 && cx < 3600) {
         adc_center_x = cx;
-        x_left_thresh = cx - 500;
-        x_right_thresh = cx + 500;
+        x_left_thresh = cx - 1000;
+        x_right_thresh = cx + 1000;
     }
-    if(cy > 500 && cy < 3500) {
+    if(cy > 800 && cy < 3600) {
         adc_center_y = cy;
-        y_fwd_thresh = cy - 500;
-        y_back_thresh = cy + 500;
+        y_fwd_thresh = cy - 1000;
+        y_back_thresh = cy + 1000;
     }
 
     HAL_GPIO_WritePin(LASER_PORT, LASER_PIN, GPIO_PIN_RESET);
@@ -184,115 +186,196 @@ int main(void)
             last_drawn_state = app_state;
         }
 
+        // --- Hardware Quick Start (Cap Touch) ---
+        if (cap_now == GPIO_PIN_RESET && last_cap_state == GPIO_PIN_SET) {
+            if (app_state == APP_MODE_SELECT || app_state == APP_CAR_SELECT || app_state == APP_HOME) {
+                selected_mode = GAME_MODE_1;
+                selected_car = CAR_V0;
+                app_state = APP_GAME;
+                Buzzer_BeepShort();
+            }
+        }
+
+        if (ts_click)
+        {
+            // Global Back Button Touch Check
+            if (px < 60 && py < 50 && app_state != APP_HOME && app_state != APP_GAME) {
+                if (app_state == APP_SETTINGS) app_state = APP_HOME;
+                else if (app_state == APP_WIFI_KEYBOARD) app_state = APP_SETTINGS;
+                else if (app_state == APP_MODE_SELECT) app_state = APP_HOME;
+                else if (app_state == APP_MODE_CONFIRM) app_state = APP_MODE_SELECT;
+                else if (app_state == APP_CAR_SELECT) app_state = APP_MODE_SELECT;
+                else if (app_state == APP_CAR_CONFIRM) app_state = APP_CAR_SELECT;
+                Buzzer_BeepShort();
+                ts_click = 0; // Consume click
+            }
+        }
+
+        // --- Navigation Logic (Touch & HW) ---
         if (app_state == APP_HOME) {
+            // Touch: direct single-click navigation (no focus needed)
             if (ts_click) {
                 if (px >= 20 && px <= 220) {
-                    if (py >= 100 && py <= 160) { app_state = APP_MODE_SELECT; Buzzer_BeepShort(); }
-                    else if (py >= 180 && py <= 240) { app_state = APP_SETTINGS; Buzzer_BeepShort(); }
-                }
-            }
-            if (k1_click) { app_state = APP_MODE_SELECT; Buzzer_BeepShort(); }
-            if (k2_click) { app_state = APP_SETTINGS; Buzzer_BeepShort(); }
-        }
-        else if (app_state == APP_SETTINGS) {
-            if (k1_click) app_state = APP_HOME;
-            if (k2_click) { 
-                LCD_Clear(15, 80, 210, 40, WHITE);
-                LCD_DrawRectangle(15, 80, 210, 40, BLUE);
-                LCD_TEXT(30, 92, "SCANNING...");
-                WifiScan(); 
-                LCD_DrawSettings(); 
-            }
-            if (ts_click) {
-                if (px >= 10 && px <= 230 && py >= 60 && py <= 220) {
-                    int8_t idx = (py - 65) / 22;
-                    if (idx >= 0 && idx < wifi_count) { selected_wifi_idx = idx; LCD_DrawWiFiList(); }
-                }
-                if (px >= 10 && px <= 230 && py >= 220 && py <= 270) {
-                    if (selected_wifi_idx != -1) { keyboard_buffer[0] = '\0'; app_state = APP_WIFI_KEYBOARD; }
-                    else { Buzzer_BeepShort(); }
-                }
-            }
-        }
-        else if (app_state == APP_WIFI_KEYBOARD) {
-            if (ts_click) {
-                if (px >= 10 && px <= 238 && py >= 90 && py <= 282) {
-                    int col = (px - 10) / 38; int row = (py - 90) / 32;
-                    if (col >= 0 && col < 6 && row >= 0 && row < 6) {
-                        const char* keys = kb_shift ? "ABCDEF GHIJKL MNOPQR STUVWX YZ0123 456789" : "abcdef ghijkl mnopqr stuvwx yz.,-_ !?@#$%";
-                        char c = keys[(row * 6) + col];
-                        if (c != ' ' && strlen(keyboard_buffer) < 31) {
-                            int len = strlen(keyboard_buffer); keyboard_buffer[len] = c; keyboard_buffer[len+1] = '\0';
-                            LCD_DrawKeyboard(keyboard_buffer);
-                        }
+                    if (py >= 100 && py <= 160) {
+                        // START BATTLE clicked
+                        app_state = APP_MODE_SELECT;
+                        Buzzer_BeepShort();
+                    }
+                    else if (py >= 180 && py <= 240) {
+                        // PREFERENCES clicked
+                        app_state = APP_SETTINGS;
+                        temp_theme = current_theme;
+                        temp_audio = audio_enabled;
+                        temp_cb = colorblind_mode;
+                        temp_led = led_enabled;
+                        temp_seg = seg_enabled;
+                        temp_font = current_font;
+                        Buzzer_BeepShort();
                     }
                 }
-                if (py >= 282 && py <= 317) {
-                    if (px >= 10 && px <= 80) { kb_shift = !kb_shift; LCD_DrawKeyboard(keyboard_buffer); }
-                    else if (px >= 85 && px <= 155) { int len = strlen(keyboard_buffer); if (len > 0) { keyboard_buffer[len-1] = '\0'; LCD_DrawKeyboard(keyboard_buffer); } }
-                    else if (px >= 160 && px <= 230) { WifiJoin(wifi_ssids[selected_wifi_idx], keyboard_buffer); app_state = APP_SETTINGS; }
+            }
+        }
+        else if (app_state == APP_SETTINGS) {
+            if (joy_down || k1_click) { settings_focus_idx = (settings_focus_idx + 1) % 7; LCD_DrawSettings(); Buzzer_BeepShort(); }
+            if (joy_up)   { settings_focus_idx = (settings_focus_idx + 6) % 7; LCD_DrawSettings(); Buzzer_BeepShort(); }
+            // Joystick button or K2 in settings toggles or enters
+            if ((fire_pressed || k2_click) && ((now - last_k2_event_tick) >= 300)) {
+                last_k2_event_tick = now;
+                if (settings_focus_idx == 0) temp_theme = (ui_theme_t)((temp_theme + 1) % 3);
+                else if (settings_focus_idx == 1) { temp_audio = !temp_audio; Buzzer_SetMute(!temp_audio); }
+                else if (settings_focus_idx == 2) temp_cb = !temp_cb;
+                else if (settings_focus_idx == 3) temp_led = !temp_led;
+                else if (settings_focus_idx == 4) temp_seg = !temp_seg;
+                else if (settings_focus_idx == 5) temp_font = (ui_font_t)((temp_font + 1) % 2);
+                else if (settings_focus_idx == 6) app_state = APP_WIFI_SETTINGS;
+                LCD_UpdateSettingsOption(settings_focus_idx);
+                Buzzer_BeepShort();
+            }
+
+            if (ts_click) {
+                uint8_t hit = 0;
+                uint8_t new_idx = settings_focus_idx;
+                if (py >= 41 && py <= 74) { new_idx = 0; hit = 1; }
+                else if (py >= 74 && py <= 107) { new_idx = 1; hit = 1; }
+                else if (py >= 107 && py <= 140) { new_idx = 2; hit = 1; }
+                else if (py >= 140 && py <= 173) { new_idx = 3; hit = 1; }
+                else if (py >= 173 && py <= 206) { new_idx = 4; hit = 1; }
+                else if (py >= 206 && py <= 239) { new_idx = 5; hit = 1; }
+                else if (py >= 239 && py <= 272) { new_idx = 6; hit = 1; }
+
+                if (hit) {
+                    if (new_idx == settings_focus_idx) {
+                        if (new_idx == 0) temp_theme = (ui_theme_t)((temp_theme + 1) % 3);
+                        else if (new_idx == 1) { temp_audio = !temp_audio; Buzzer_SetMute(!temp_audio); }
+                        else if (new_idx == 2) temp_cb = !temp_cb;
+                        else if (new_idx == 3) temp_led = !temp_led;
+                        else if (new_idx == 4) temp_seg = !temp_seg;
+                        else if (new_idx == 5) temp_font = (ui_font_t)((temp_font + 1) % 2);
+                        else if (new_idx == 6) app_state = APP_WIFI_SETTINGS;
+                        LCD_UpdateSettingsOption(new_idx);
+                    } else {
+                        uint8_t old = settings_focus_idx;
+                        settings_focus_idx = new_idx;
+                        LCD_UpdateSettingsOption(old);
+                        LCD_UpdateSettingsOption(new_idx);
+                    }
+                    Buzzer_BeepShort();
+                }
+                else if (py >= 280) {
+                    if (px >= 120) {
+                        current_theme = temp_theme; audio_enabled = temp_audio; colorblind_mode = temp_cb;
+                        led_enabled = temp_led; seg_enabled = temp_seg; current_font = temp_font;
+                        if (!led_enabled) RGB_Set(0, 0, 0); else RGB_Update_From_State();
+                        if (!seg_enabled) SEG_AllOff();
+                        app_state = APP_HOME; Buzzer_BeepShort();
+                    } else if (px <= 110) {
+                        app_state = APP_HOME; Buzzer_SetMute(!audio_enabled); Buzzer_BeepShort();
+                    }
                 }
             }
         }
         else if (app_state == APP_MODE_SELECT) {
-            if (k1_click) { selected_mode = (game_mode_t)(((uint8_t)selected_mode + 1U) % 3U); Buzzer_BeepShort(); }
-            if (k2_click) { app_state = APP_MODE_CONFIRM; Buzzer_BeepShort(); }
+            if (joy_down || k1_click) { mode_focus_idx = (mode_focus_idx + 1) % 3; LCD_UpdateModeSelection(); Buzzer_BeepShort(); }
+            if (joy_up)   { mode_focus_idx = (mode_focus_idx + 2) % 3; LCD_UpdateModeSelection(); Buzzer_BeepShort(); }
+            if ((fire_pressed || k2_click) && ((now - last_k2_event_tick) >= 300)) {
+                selected_mode = (game_mode_t)mode_focus_idx;
+                app_state = APP_MODE_CONFIRM;
+                last_k2_event_tick = now;
+                Buzzer_BeepShort();
+            }
+            
             if (ts_click) {
                 if (px >= 20 && px <= 220) {
-                    game_mode_t new_mode = selected_mode;
-                    uint8_t hit = 0;
-                    if (py >= 70 && py <= 110) { new_mode = GAME_MODE_1; hit = 1; }
-                    else if (py >= 125 && py <= 165) { new_mode = GAME_MODE_2; hit = 1; }
-                    else if (py >= 180 && py <= 220) { new_mode = GAME_MODE_3; hit = 1; }
+                    int8_t new_idx = -1;
+                    if (py >= 70 && py <= 110) new_idx = 0;
+                    else if (py >= 125 && py <= 165) new_idx = 1;
+                    else if (py >= 180 && py <= 220) new_idx = 2;
                     
-                    if (hit) {
-                        if (new_mode == selected_mode) { app_state = APP_MODE_CONFIRM; Buzzer_BeepShort(); }
-                        else { selected_mode = new_mode; LCD_UpdateModeSelection(); Buzzer_BeepShort(); }
+                    if (new_idx != -1) {
+                        if (new_idx == mode_focus_idx) {
+                            selected_mode = (game_mode_t)new_idx;
+                            app_state = APP_MODE_CONFIRM;
+                        } else {
+                            mode_focus_idx = new_idx;
+                            LCD_UpdateModeSelection();
+                        }
+                        Buzzer_BeepShort();
                     }
                 }
             }
-            if (selected_mode != last_drawn_mode) { LCD_UpdateModeSelection(); last_drawn_mode = selected_mode; }
         }
         else if (app_state == APP_MODE_CONFIRM) {
             if (k1_click) { app_state = APP_MODE_SELECT; Buzzer_BeepShort(); }
             if (k2_click) {
+                // Skip car select for Mode 2 and Mode 3; just change state and let main loop init
+                if (selected_mode == GAME_MODE_2 || selected_mode == GAME_MODE_3) { app_state = APP_GAME; }
+                else { app_state = APP_CAR_SELECT; }
                 Buzzer_BeepShort();
-                if (selected_mode == GAME_MODE_2 || selected_mode == GAME_MODE_3) app_state = APP_GAME;
-                else app_state = APP_CAR_SELECT;
             }
             if (ts_click) {
-                if (py >= 195 && py <= 230) {
-                    if (px >= 30 && px <= 110) { app_state = APP_MODE_SELECT; Buzzer_BeepShort(); }
-                    else if (px >= 130 && px <= 210) {
+                if (py >= 190 && py <= 235) {
+                    if (px >= 10 && px <= 115) { app_state = APP_MODE_SELECT; Buzzer_BeepShort(); }
+                    else if (px >= 125 && px <= 230) {
+                        if (selected_mode == GAME_MODE_2 || selected_mode == GAME_MODE_3) { app_state = APP_GAME; }
+                        else { app_state = APP_CAR_SELECT; }
                         Buzzer_BeepShort();
-                        if (selected_mode == GAME_MODE_2 || selected_mode == GAME_MODE_3) app_state = APP_GAME;
-                        else app_state = APP_CAR_SELECT;
                     }
                 }
             }
         }
         else if (app_state == APP_CAR_SELECT) {
-            if (k1_click) { selected_car = (car_type_t)(((uint8_t)selected_car + 1U) % 7U); Buzzer_BeepShort(); }
-            if (k2_click) { app_state = APP_CAR_CONFIRM; Buzzer_BeepShort(); }
+            if (joy_down || k1_click) { car_focus_idx = (car_focus_idx + 1) % 7; LCD_UpdateCarSelection(); Buzzer_BeepShort(); }
+            if (joy_up)   { car_focus_idx = (car_focus_idx + 6) % 7; LCD_UpdateCarSelection(); Buzzer_BeepShort(); }
+            if ((fire_pressed || k2_click) && ((now - last_k2_event_tick) >= 300)) {
+                selected_car = (car_type_t)car_focus_idx;
+                app_state = APP_CAR_CONFIRM;
+                last_k2_event_tick = now;
+                Buzzer_BeepShort();
+            }
+
             if (ts_click) {
                 if (px >= 14 && px <= 226) {
-                    int idx = (py - 64) / 24;
-                    if (idx >= 0 && idx <= 6) {
-                        car_type_t new_car = (car_type_t)idx;
-                        if (new_car == selected_car) { app_state = APP_CAR_CONFIRM; Buzzer_BeepShort(); }
-                        else { selected_car = new_car; LCD_UpdateCarSelection(); Buzzer_BeepShort(); }
+                    int8_t new_idx = (py - 64) / 26;
+                    if (new_idx >= 0 && new_idx <= 6) {
+                        if (new_idx == car_focus_idx) {
+                            selected_car = (car_type_t)new_idx;
+                            app_state = APP_CAR_CONFIRM;
+                        } else {
+                            car_focus_idx = new_idx;
+                            LCD_UpdateCarSelection();
+                        }
+                        Buzzer_BeepShort();
                     }
                 }
             }
-            if (selected_car != last_drawn_car) { LCD_UpdateCarSelection(); last_drawn_car = selected_car; }
         }
         else if (app_state == APP_CAR_CONFIRM) {
             if (k1_click) { app_state = APP_CAR_SELECT; Buzzer_BeepShort(); }
             if (k2_click) { app_state = APP_GAME; Buzzer_BeepShort(); }
             if (ts_click) {
-                if (py >= 195 && py <= 230) {
-                    if (px >= 30 && px <= 110) { app_state = APP_CAR_SELECT; Buzzer_BeepShort(); }
-                    else if (px >= 130 && px <= 210) { app_state = APP_GAME; Buzzer_BeepShort(); }
+                if (py >= 190 && py <= 235) {
+                    if (px >= 10 && px <= 115) { app_state = APP_CAR_SELECT; Buzzer_BeepShort(); }
+                    else if (px >= 125 && px <= 230) { app_state = APP_GAME; Buzzer_BeepShort(); }
                 }
             }
         }

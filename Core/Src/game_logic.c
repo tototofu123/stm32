@@ -304,6 +304,9 @@ void SpecialAbility_ResetCooldown(void)
             strcpy(laser_line, "READY");
             fire_cmd_priority = 0U;
             
+            // Abort the 7-Segment countdown
+            seg_mode = SEG_IDLE;
+
             // Set cooldown for 10 rounds
             touch_ability_shots_needed = 10;
             Buzzer_BeepLong(); // Sound feedback for ability use

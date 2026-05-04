@@ -8,6 +8,7 @@
 typedef enum {
     APP_HOME = 0,
     APP_SETTINGS,
+    APP_WIFI_SETTINGS,
     APP_WIFI_KEYBOARD,
     APP_MODE_SELECT,
     APP_MODE_CONFIRM,

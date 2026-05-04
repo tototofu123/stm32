@@ -1,4 +1,5 @@
 #include "alerts.h"
+#include "ui.h"
 
 // Buzzer state trackers
 uint8_t  buzzer_active   = 0U;
@@ -8,6 +9,7 @@ uint32_t buzzer_duration = 0U;
 
 void RGB_Set(uint8_t r, uint8_t g, uint8_t b)
 {
+    if (!led_enabled) { r = 0; g = 0; b = 0; } // Force off if LED display is disabled
     // The RGB LED is active-low, so 1 turns it ON (GPIO_PIN_RESET) and 0 turns it OFF (GPIO_PIN_SET)
     HAL_GPIO_WritePin(RGB_R_PORT, RGB_R_PIN, r ? GPIO_PIN_RESET : GPIO_PIN_SET);
     HAL_GPIO_WritePin(RGB_G_PORT, RGB_G_PIN, g ? GPIO_PIN_RESET : GPIO_PIN_SET);

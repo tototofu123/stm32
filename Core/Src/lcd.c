@@ -1,5 +1,6 @@
 #include "lcd.h"
 #include "ascii.h"
+#include "ui.h"
 #include <math.h>
 
 void LCD_REG_Config(void);
@@ -163,24 +164,53 @@ void LCD_DrawChar(uint16_t usC, uint16_t usP, const char cChar)
 {
 	uint8_t ucTemp, ucRelativePositon, ucPage, ucColumn;
 	ucRelativePositon = cChar - ' ';
-	LCD_OpenWindow(usC, usP, WIDTH_EN_CHAR, HEIGHT_EN_CHAR);
-	LCD_Write_Cmd(CMD_SetPixel);
-	for (ucPage = 0; ucPage < HEIGHT_EN_CHAR; ucPage++) {
-		ucTemp = ucAscii_1608[ucRelativePositon][ucPage];
-		for (ucColumn = 0; ucColumn < WIDTH_EN_CHAR; ucColumn++) {
-			if (ucTemp & 0x01) LCD_Write_Data(Current_TextColor); else LCD_Write_Data(Current_TextBackColor);
-			ucTemp >>= 1;
-		}
-	}
+    
+    if (current_font == FONT_LARGE) {
+        // Medium Scale (1.25x -> 10x20 pixels)
+        // Repeat every 4th column (8->10) and every 4th row (16->20)
+        LCD_OpenWindow(usC, usP, 10, 20);
+        LCD_Write_Cmd(CMD_SetPixel);
+        
+        for (ucPage = 0; ucPage < HEIGHT_EN_CHAR; ucPage++) {
+            ucTemp = ucAscii_1608[ucRelativePositon][ucPage];
+            
+            // Repeat this row if it's every 4th row (index 3, 7, 11, 15)
+            uint8_t repeat_row = ((ucPage + 1) % 4 == 0) ? 2 : 1;
+            
+            for (uint8_t r = 0; r < repeat_row; r++) {
+                uint8_t temp_row = ucTemp;
+                for (ucColumn = 0; ucColumn < WIDTH_EN_CHAR; ucColumn++) {
+                    uint16_t color = (temp_row & 0x01) ? Current_TextColor : Current_TextBackColor;
+                    LCD_Write_Data(color);
+                    // Repeat every 4th column
+                    if ((ucColumn + 1) % 4 == 0) LCD_Write_Data(color);
+                    temp_row >>= 1;
+                }
+            }
+        }
+    } else {
+        LCD_OpenWindow(usC, usP, WIDTH_EN_CHAR, HEIGHT_EN_CHAR);
+        LCD_Write_Cmd(CMD_SetPixel);
+        for (ucPage = 0; ucPage < HEIGHT_EN_CHAR; ucPage++) {
+            ucTemp = ucAscii_1608[ucRelativePositon][ucPage];
+            for (ucColumn = 0; ucColumn < WIDTH_EN_CHAR; ucColumn++) {
+                if (ucTemp & 0x01) LCD_Write_Data(Current_TextColor); else LCD_Write_Data(Current_TextBackColor);
+                ucTemp >>= 1;
+            }
+        }
+    }
 }
 
 void LCD_DrawString(uint16_t usC, uint16_t usP, const char *pStr)
 {
+    uint8_t char_w = (current_font == FONT_LARGE) ? 10 : WIDTH_EN_CHAR;
+    uint8_t char_h = (current_font == FONT_LARGE) ? 20 : HEIGHT_EN_CHAR;
+
 	while (*pStr != '\0') {
-		if ((usC - LCD_DispWindow_Start_COLUMN + WIDTH_EN_CHAR) > LCD_DispWindow_COLUMN) { usC = LCD_DispWindow_Start_COLUMN; usP += HEIGHT_EN_CHAR; }
-		if ((usP - LCD_DispWindow_Start_PAGE + HEIGHT_EN_CHAR) > LCD_DispWindow_PAGE) { usC = LCD_DispWindow_Start_COLUMN; usP = LCD_DispWindow_Start_PAGE; }
+		if ((usC - LCD_DispWindow_Start_COLUMN + char_w) > LCD_DispWindow_COLUMN) { usC = LCD_DispWindow_Start_COLUMN; usP += char_h; }
+		if ((usP - LCD_DispWindow_Start_PAGE + char_h) > LCD_DispWindow_PAGE) { usC = LCD_DispWindow_Start_COLUMN; usP = LCD_DispWindow_Start_PAGE; }
 		LCD_DrawChar(usC, usP, *pStr);
-		pStr++; usC += WIDTH_EN_CHAR;
+		pStr++; usC += char_w;
 	}
 }
 
