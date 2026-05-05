@@ -330,7 +330,7 @@ void Motor_SendCmd(char cmd, uint8_t speed)
     if (!fire_cmd_priority)
         snprintf(esp_cmd_rx, sizeof(esp_cmd_rx), "%s", tx);
 
-    sendAT(tx);                    // Transmit via UART to ESP module.
+    Wifi_SendToClient(0,tx);                    // Transmit via UART to ESP module.
     last_motor_cmd = cmd;          // Remember this command for debouncing.
     last_motor_speed = speed;
     motor_cmd_tick = now;          // Update timestamp for next interval check.
@@ -351,7 +351,7 @@ void Fire_SendCmd(uint8_t fire_on)
     // Format fire command: 'T' + 0/1 (e.g., "T001" for fire, "T000" for stop).
     snprintf(tx, sizeof(tx), "T%03u", fire_on ? 1U : 0U);
     snprintf(esp_cmd_rx, sizeof(esp_cmd_rx), "%s", tx);
-    sendAT(tx);  // Transmit via UART to ESP module.
+    Wifi_SendToClient(0,tx);  // Transmit via UART to ESP module.
 }
 
 /*
