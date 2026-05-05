@@ -64,7 +64,7 @@
 
 ADC_HandleTypeDef  hadc1;
 ADC_HandleTypeDef  hadc2;
-I2C_HandleTypeDef  hi2c2;
+//I2C_HandleTypeDef  hi2c2;
 UART_HandleTypeDef huart3;
 SRAM_HandleTypeDef hsram1;
 
@@ -104,12 +104,12 @@ int main(void)
     MX_FSMC_Init();
     MX_ADC1_Init();
     MX_ADC2_Init();
-    MX_I2C2_Init();
+    //MX_I2C2_Init();
     MX_USART3_UART_Init();
 
     HAL_ADCEx_Calibration_Start(&hadc1);
     HAL_ADCEx_Calibration_Start(&hadc2);
-    
+
     // Joystick auto-calibration (increased deadzone to 1000 for stability)
     // We read current joystick center values once at startup to adapt to
     // hardware variation between boards and analog stick tolerances.
@@ -139,7 +139,7 @@ int main(void)
     SEG_ShowPair(0, 0, 0);
 
     LCD_INIT();
-    
+
     LCD_DrawHome();
     last_drawn_state = APP_HOME;
 
@@ -148,6 +148,8 @@ int main(void)
 
     while (1)
     {
+
+    	//Wifi_ProcessIncoming();
         // ===== FRAME START =====
         // Every pass through this loop is one firmware "frame".
         // 1) Read all inputs
@@ -158,7 +160,7 @@ int main(void)
         uint32_t now = HAL_GetTick();
         uint32_t x_raw = read_adc1();
         uint32_t y_raw = read_adc2();
-        
+
         // Joystick direction pulses
         // We convert continuous analog direction into single-step events.
         // Example: if the user keeps holding UP, we only emit one joy_up pulse
@@ -177,7 +179,7 @@ int main(void)
 
         // JOY_SW is wired active-low: RESET means physically pressed.
         uint8_t fire_pressed = (joy_sw_now == GPIO_PIN_RESET) ? 1 : 0;
-        
+
         // Capacitive key edge detect (pressed now, not pressed in previous frame).
         // This avoids repeating the same action every frame while held.
         if (cap_now == GPIO_PIN_RESET && last_cap_state == GPIO_PIN_SET) {
@@ -194,7 +196,7 @@ int main(void)
         }
         // Save current sampled state for next frame edge detection.
         last_cap_state = cap_now;
-        
+
         uint8_t ts_pressed = TouchPressed();
         uint8_t ts_click = 0;
         uint16_t px = 0, py = 0;
@@ -433,7 +435,7 @@ int main(void)
                 last_k2_event_tick = now;
                 Buzzer_BeepShort();
             }
-            
+
             // Touch input for mode selection.
             if (ts_click) {
                 if (px >= 20 && px <= 220) {
@@ -442,7 +444,7 @@ int main(void)
                     if (py >= 70 && py <= 110) new_idx = 0;  // MODE 1 row
                     else if (py >= 125 && py <= 165) new_idx = 1;  // MODE 2 row
                     else if (py >= 180 && py <= 220) new_idx = 2;  // MODE 3 row
-                    
+
                     if (new_idx != -1) {
                         if (new_idx == mode_focus_idx) {
                             // Double-tap same mode: confirm selection.
@@ -690,7 +692,7 @@ static void MX_ADC1_Init(void)
     hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
     hadc1.Init.NbrOfConversion = 1;
     if (HAL_ADC_Init(&hadc1) != HAL_OK) Error_Handler();
-    s.Channel = ADC_CHANNEL_10;
+    s.Channel = ADC_CHANNEL_11;
     s.Rank = ADC_REGULAR_RANK_1;
     s.SamplingTime = ADC_SAMPLETIME_55CYCLES_5;
     if (HAL_ADC_ConfigChannel(&hadc1, &s) != HAL_OK) Error_Handler();
@@ -711,17 +713,17 @@ static void MX_ADC2_Init(void)
     hadc2.Init.DataAlign = ADC_DATAALIGN_RIGHT;
     hadc2.Init.NbrOfConversion = 1;
     if (HAL_ADC_Init(&hadc2) != HAL_OK) Error_Handler();
-    s.Channel = ADC_CHANNEL_11;
+    s.Channel = ADC_CHANNEL_13;
     s.Rank = ADC_REGULAR_RANK_1;
     s.SamplingTime = ADC_SAMPLETIME_55CYCLES_5;
     if (HAL_ADC_ConfigChannel(&hadc2, &s) != HAL_OK) Error_Handler();
 }
 
-static void MX_I2C2_Init(void)
+/*static void MX_I2C2_Init(void)
 {
     /* MX_I2C2_Init prepares the I2C peripheral used by external devices on the
      * board.
-     */
+
 
     hi2c2.Instance = I2C2;
     hi2c2.Init.ClockSpeed = 100000;
@@ -733,7 +735,7 @@ static void MX_I2C2_Init(void)
     hi2c2.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
     hi2c2.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
     if (HAL_I2C_Init(&hi2c2) != HAL_OK) Error_Handler();
-}
+}*/
 
 static void MX_USART3_UART_Init(void)
 {
@@ -841,4 +843,3 @@ void Error_Handler(void) { __disable_irq(); while (1) {} }
 /* Error_Handler disables interrupts and loops forever so the system remains in
  * a known safe state after an unrecoverable failure.
  */
-
